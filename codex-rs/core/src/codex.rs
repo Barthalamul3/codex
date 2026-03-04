@@ -163,6 +163,8 @@ use crate::config::types::McpServerConfig;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
+use crate::contextual_user_message::ModelVisibleFragment;
+use crate::contextual_user_message::TurnContextFragment;
 use crate::environment_context::EnvironmentContext;
 use crate::error::CodexErr;
 use crate::error::Result as CodexResult;
@@ -2659,7 +2661,8 @@ impl Session {
             return;
         };
         let text = format!("Approved command prefix saved:\n{prefixes}");
-        let message: ResponseItem = DeveloperInstructions::new(text.clone()).into();
+        let fragment = DeveloperInstructions::new(text.clone());
+        let message = fragment.clone().into_response_item();
 
         if let Some(turn_context) = self.turn_context_for_sub_id(sub_id).await {
             self.record_conversation_items(&turn_context, std::slice::from_ref(&message))
@@ -2668,10 +2671,7 @@ impl Session {
         }
 
         if self
-            .inject_response_items(vec![ResponseInputItem::Message {
-                role: "developer".to_string(),
-                content: vec![ContentItem::InputText { text }],
-            }])
+            .inject_response_items(vec![fragment.into_response_input_item()])
             .await
             .is_err()
         {
@@ -2756,7 +2756,8 @@ impl Session {
             "{action} network rule saved in execpolicy ({list_name}): {}",
             amendment.host
         );
-        let message: ResponseItem = DeveloperInstructions::new(text.clone()).into();
+        let fragment = DeveloperInstructions::new(text.clone());
+        let message = fragment.clone().into_response_item();
 
         if let Some(turn_context) = self.turn_context_for_sub_id(sub_id).await {
             self.record_conversation_items(&turn_context, std::slice::from_ref(&message))
@@ -2765,10 +2766,7 @@ impl Session {
         }
 
         if self
-            .inject_response_items(vec![ResponseInputItem::Message {
-                role: "developer".to_string(),
-                content: vec![ContentItem::InputText { text }],
-            }])
+            .inject_response_items(vec![fragment.into_response_input_item()])
             .await
             .is_err()
         {
@@ -3432,21 +3430,27 @@ impl Session {
         {
             developer_envelope.push(commit_message_instruction);
         }
-        if let Some(user_instructions) = turn_context.user_instructions.as_deref() {
-            contextual_user_envelope.push_fragment(UserInstructions {
-                text: user_instructions.to_string(),
-                directory: turn_context.cwd.to_string_lossy().into_owned(),
-            });
+        if let Some(user_instructions) =
+            <UserInstructions as TurnContextFragment>::from_turn_context(
+                turn_context,
+                shell.as_ref(),
+            )
+        {
+            contextual_user_envelope.push_fragment(user_instructions);
         }
         let subagents = self
             .services
             .agent_control
             .format_environment_context_subagents(self.conversation_id)
             .await;
-        contextual_user_envelope.push_fragment(EnvironmentContext::from_turn_context(
-            turn_context,
-            shell.as_ref(),
-        ));
+        if let Some(environment_context) =
+            <EnvironmentContext as TurnContextFragment>::from_turn_context(
+                turn_context,
+                shell.as_ref(),
+            )
+        {
+            contextual_user_envelope.push_fragment(environment_context);
+        }
         if let Some(subagent_roster) = crate::session_prefix::SubagentRosterContext::new(subagents)
         {
             contextual_user_envelope.push_fragment(subagent_roster);
