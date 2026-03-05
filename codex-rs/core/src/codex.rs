@@ -169,6 +169,7 @@ use crate::error::Result as CodexResult;
 #[cfg(test)]
 use crate::exec::StreamOutput;
 use crate::model_visible_context::ModelVisibleContextFragment;
+use crate::model_visible_context::TurnContextDiffContext;
 use crate::model_visible_context::TurnContextDiffFragment;
 use codex_config::CONFIG_TOML_FILE;
 
@@ -2497,13 +2498,16 @@ impl Session {
         };
         let shell = self.user_shell();
         let exec_policy = self.services.exec_policy.current();
-        crate::context_manager::updates::build_settings_update_items(
-            reference_context_item,
-            previous_turn_settings.as_ref(),
-            current_context,
+        let diff_context = TurnContextDiffContext::new(
             shell.as_ref(),
+            previous_turn_settings.as_ref(),
             exec_policy.as_ref(),
             self.features.enabled(Feature::Personality),
+        );
+        crate::context_manager::updates::build_settings_update_items(
+            reference_context_item,
+            current_context,
+            &diff_context,
         )
     }
 
@@ -3355,7 +3359,6 @@ impl Session {
             crate::context_manager::updates::DeveloperEnvelopeBuilder::default();
         let mut contextual_user_envelope =
             crate::context_manager::updates::ContextualUserEnvelopeBuilder::default();
-        let shell = self.user_shell();
         let (reference_context_item, previous_turn_settings, collaboration_mode, base_instructions) = {
             let state = self.state.lock().await;
             (
@@ -3365,6 +3368,14 @@ impl Session {
                 state.session_configuration.base_instructions.clone(),
             )
         };
+        let shell = self.user_shell();
+        let exec_policy = self.services.exec_policy.current();
+        let diff_context = TurnContextDiffContext::new(
+            shell.as_ref(),
+            previous_turn_settings.as_ref(),
+            exec_policy.as_ref(),
+            self.features.enabled(Feature::Personality),
+        );
         if let Some(model_switch_message) =
             crate::context_manager::updates::build_model_instructions_update_item(
                 previous_turn_settings.as_ref(),
@@ -3377,7 +3388,7 @@ impl Session {
             turn_context.sandbox_policy.get(),
             turn_context.approval_policy.value(),
             turn_context.features.enabled(Feature::GuardianApproval),
-            self.services.exec_policy.current().as_ref(),
+            exec_policy.as_ref(),
             &turn_context.cwd,
             turn_context.features.enabled(Feature::RequestPermissions),
         ));
@@ -3434,7 +3445,7 @@ impl Session {
         if let Some(user_instructions) =
             <UserInstructions as TurnContextDiffFragment>::from_turn_context(
                 turn_context,
-                shell.as_ref(),
+                &diff_context,
             )
         {
             contextual_user_envelope.push_fragment(user_instructions);
@@ -3456,7 +3467,7 @@ impl Session {
         if let Some(environment_context) =
             <EnvironmentContext as TurnContextDiffFragment>::from_turn_context(
                 turn_context,
-                shell.as_ref(),
+                &diff_context,
             )
         {
             contextual_user_envelope.push_fragment(environment_context);
