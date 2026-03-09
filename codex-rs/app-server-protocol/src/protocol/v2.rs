@@ -3943,6 +3943,7 @@ pub enum ThreadItem {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
+    /// UNSTABLE: Guardian assessment items may evolve as the app UI settles.
     GuardianAssessment {
         id: String,
         status: GuardianAssessmentStatus,
@@ -3989,6 +3990,7 @@ impl ThreadItem {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export_to = "v2/")]
+/// UNSTABLE: Guardian assessment status values are part of the evolving app UI surface.
 pub enum GuardianAssessmentStatus {
     InProgress,
     Approved,
@@ -4008,6 +4010,7 @@ impl From<CoreGuardianAssessmentStatus> for GuardianAssessmentStatus {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export_to = "v2/")]
+/// UNSTABLE: Guardian risk labels are part of the evolving app UI surface.
 pub enum GuardianRiskLevel {
     Low,
     Medium,
