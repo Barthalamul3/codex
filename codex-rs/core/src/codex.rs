@@ -445,6 +445,12 @@ impl Codex {
             .clone()
             .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
             .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
+        // Resolve user instructions once for the session. If a later turn
+        // switches models, model-specific guidance in this block can become
+        // stale (for example JS REPL `detail: "original"` docs). Keep any
+        // model-specific guidance here advisory rather than critical: the turn
+        // should still work correctly without it, because tool exposure and
+        // runtime behavior are refreshed from current `model_info`.
         let user_instructions = get_user_instructions(
             &config,
             Some(&model_info),
