@@ -2063,6 +2063,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn emitted_image_content_item_overrides_explicit_detail_when_always_enabled() {
+        let (_session, mut turn) = make_session_and_context().await;
+        Arc::make_mut(&mut turn.config)
+            .features
+            .enable(Feature::ImageDetailOriginalAlways)
+            .expect("test config should allow feature update");
+        turn.features
+            .enable(Feature::ImageDetailOriginalAlways)
+            .expect("test turn features should allow feature update");
+        turn.model_info.supports_image_detail_original = true;
+
+        let content_item = emitted_image_content_item(
+            &turn,
+            "data:image/png;base64,AAA".to_string(),
+            Some(ImageDetail::Low),
+        );
+
+        assert_eq!(
+            content_item,
+            FunctionCallOutputContentItem::InputImage {
+                image_url: "data:image/png;base64,AAA".to_string(),
+                detail: Some(ImageDetail::Original),
+            }
+        );
+    }
+
+    #[tokio::test]
     async fn emitted_image_content_item_drops_explicit_original_detail_when_disabled() {
         let (_session, turn) = make_session_and_context().await;
 

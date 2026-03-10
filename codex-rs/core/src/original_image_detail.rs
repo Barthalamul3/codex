@@ -25,15 +25,16 @@ pub(crate) fn normalize_output_image_detail(
     model_info: &ModelInfo,
     detail: Option<ImageDetail>,
 ) -> Option<ImageDetail> {
+    if should_force_original_image_detail(features, model_info) {
+        return Some(ImageDetail::Original);
+    }
+
     match detail {
         Some(ImageDetail::Original) if !can_request_original_image_detail(features, model_info) => {
             None
         }
         other => other,
     }
-    .or_else(|| {
-        should_force_original_image_detail(features, model_info).then_some(ImageDetail::Original)
-    })
 }
 
 #[cfg(test)]
@@ -79,6 +80,10 @@ mod tests {
         assert!(should_force_original_image_detail(&features, &model_info));
         assert_eq!(
             normalize_output_image_detail(&features, &model_info, None),
+            Some(ImageDetail::Original)
+        );
+        assert_eq!(
+            normalize_output_image_detail(&features, &model_info, Some(ImageDetail::Low)),
             Some(ImageDetail::Original)
         );
     }
