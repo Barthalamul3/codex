@@ -657,7 +657,7 @@ fn create_view_image_tool(can_request_original_image_detail: bool) -> ToolSpec {
             "detail".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Optional detail override. Use `original` to preserve the file's original resolution instead of resizing to fit. This is important when high-fidelity image perception or precise localization is needed, especially for CUA agents.".to_string(),
+                    "Optional detail override. The only supported value is `original`; omit this field for default resized behavior. Use `original` to preserve the file's original resolution instead of resizing to fit. This is important when high-fidelity image perception or precise localization is needed, especially for CUA agents.".to_string(),
                 ),
             },
         );
@@ -2433,6 +2433,14 @@ mod tests {
             panic!("view_image should use an object schema");
         };
         assert!(properties.contains_key("detail"));
+        let Some(JsonSchema::String {
+            description: Some(description),
+        }) = properties.get("detail")
+        else {
+            panic!("view_image detail should include a description");
+        };
+        assert!(description.contains("only supported value is `original`"));
+        assert!(description.contains("omit this field for default resized behavior"));
     }
 
     #[test]

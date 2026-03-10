@@ -29,7 +29,7 @@ const VIEW_IMAGE_UNSUPPORTED_MESSAGE: &str =
 #[derive(Deserialize)]
 struct ViewImageArgs {
     path: String,
-    detail: Option<ViewImageDetail>,
+    detail: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
@@ -74,6 +74,15 @@ impl ToolHandler for ViewImageHandler {
         };
 
         let args: ViewImageArgs = parse_arguments(&arguments)?;
+        let detail = match args.detail.as_deref() {
+            None => None,
+            Some("original") => Some(ViewImageDetail::Original),
+            Some(other) => {
+                return Err(FunctionCallError::RespondToModel(format!(
+                    "view_image.detail only supports `original`; omit `detail` for default resized behavior, got `{other}`"
+                )));
+            }
+        };
 
         let abs_path = turn.resolve_path(Some(args.path));
 
@@ -97,8 +106,7 @@ impl ToolHandler for ViewImageHandler {
         let force_original_detail =
             should_force_original_image_detail(turn.features.get(), &turn.model_info);
         let use_original_detail = force_original_detail
-            || (can_request_original_detail
-                && matches!(args.detail, Some(ViewImageDetail::Original)));
+            || (can_request_original_detail && matches!(detail, Some(ViewImageDetail::Original)));
         let image_mode = if use_original_detail {
             PromptImageMode::Original
         } else {
