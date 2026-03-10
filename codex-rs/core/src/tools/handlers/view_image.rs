@@ -19,6 +19,7 @@ use crate::tools::context::ToolPayload;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
+use serde_json::Value;
 
 pub struct ViewImageHandler;
 
@@ -28,11 +29,11 @@ const VIEW_IMAGE_UNSUPPORTED_MESSAGE: &str =
 #[derive(Deserialize)]
 struct ViewImageArgs {
     path: String,
-    detail: Option<String>,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, Value>,
 }
 
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum ViewImageDetail {
     Original,
 }
@@ -77,13 +78,23 @@ impl ToolHandler for ViewImageHandler {
         // `detail` for the default path or set it to `original`.
         // Other values remain invalid rather than being silently
         // reinterpreted.
-        let detail = match args.detail.as_deref() {
+        let detail = match args.extra.get("detail") {
             None => None,
-            Some("original") => Some(ViewImageDetail::Original),
-            Some(other) => {
+            Some(Value::Null) => {
+                return Err(FunctionCallError::RespondToModel(
+                    "view_image.detail does not accept null; omit `detail` for default resized behavior".to_string(),
+                ));
+            }
+            Some(Value::String(detail)) if detail == "original" => Some(ViewImageDetail::Original),
+            Some(Value::String(detail)) => {
                 return Err(FunctionCallError::RespondToModel(format!(
-                    "view_image.detail only supports `original`; omit `detail` for default resized behavior, got `{other}`"
+                    "view_image.detail only supports `original`; omit `detail` for default resized behavior, got `{detail}`"
                 )));
+            }
+            Some(_) => {
+                return Err(FunctionCallError::RespondToModel(
+                    "view_image.detail must be the string `original` when provided".to_string(),
+                ));
             }
         };
 

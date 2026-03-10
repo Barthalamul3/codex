@@ -483,6 +483,92 @@ async fn view_image_tool_errors_clearly_for_unsupported_detail_values() -> anyho
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn view_image_tool_errors_clearly_for_null_detail() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex()
+        .with_model("gpt-5.3-codex")
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::ImageDetailOriginal)
+                .expect("test config should allow feature update");
+        });
+    let TestCodex {
+        codex,
+        cwd,
+        session_configured,
+        ..
+    } = builder.build(&server).await?;
+
+    let rel_path = "assets/null-detail.png";
+    let abs_path = cwd.path().join(rel_path);
+    if let Some(parent) = abs_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let image = ImageBuffer::from_pixel(256, 128, Rgba([0u8, 80, 255, 255]));
+    image.save(&abs_path)?;
+
+    let call_id = "view-image-null-detail";
+    let arguments = serde_json::json!({ "path": rel_path, "detail": null }).to_string();
+
+    let first_response = sse(vec![
+        ev_response_created("resp-1"),
+        ev_function_call(call_id, "view_image", &arguments),
+        ev_completed("resp-1"),
+    ]);
+    responses::mount_sse_once(&server, first_response).await;
+
+    let second_response = sse(vec![
+        ev_assistant_message("msg-1", "done"),
+        ev_completed("resp-2"),
+    ]);
+    let mock = responses::mount_sse_once(&server, second_response).await;
+
+    let session_model = session_configured.model.clone();
+
+    codex
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "please attach the image with a null detail".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: cwd.path().to_path_buf(),
+            approval_policy: AskForApproval::Never,
+            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            model: session_model,
+            effort: None,
+            service_tier: None,
+            summary: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    let req = mock.single_request();
+    let body_with_tool_output = req.body_json();
+    let output_text = req
+        .function_call_output_content_and_success(call_id)
+        .and_then(|(content, _)| content)
+        .expect("output text present");
+    assert_eq!(
+        output_text,
+        "view_image.detail does not accept null; omit `detail` for default resized behavior"
+    );
+
+    assert!(
+        find_image_message(&body_with_tool_output).is_none(),
+        "null detail should not produce an input_image message"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn view_image_tool_keeps_legacy_behavior_below_gpt5_3_codex() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
