@@ -5,6 +5,13 @@
       "description": "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
       "type": "string"
     },
+    "ApprovalReviewPolicy": {
+      "enum": [
+        "manualOnly",
+        "autoOnly"
+      ],
+      "type": "string"
+    },
     "AppsListParams": {
       "description": "EXPERIMENTAL - list available apps/connectors.",
       "properties": {
@@ -2253,6 +2260,17 @@
             }
           ]
         },
+        "approvalReviewPolicy": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ApprovalReviewPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Override whether approvals stay manual or are automatically reviewed for this thread and subsequent turns."
+        },
         "baseInstructions": {
           "type": [
             "string",
@@ -2533,6 +2551,17 @@
             }
           ]
         },
+        "approvalReviewPolicy": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ApprovalReviewPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Override whether approvals stay manual or are automatically reviewed for this thread and subsequent turns."
+        },
         "baseInstructions": {
           "type": [
             "string",
@@ -2684,6 +2713,17 @@
             }
           ]
         },
+        "approvalReviewPolicy": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ApprovalReviewPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Override whether approvals stay manual or are automatically reviewed for this thread and subsequent turns."
+        },
         "baseInstructions": {
           "type": [
             "string",
@@ -2822,6 +2862,17 @@
             }
           ],
           "description": "Override the approval policy for this turn and subsequent turns."
+        },
+        "approvalReviewPolicy": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ApprovalReviewPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Override whether approvals stay manual or are automatically reviewed for this turn and subsequent turns."
         },
         "cwd": {
           "description": "Override the working directory for this turn and subsequent turns.",
