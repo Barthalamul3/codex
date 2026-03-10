@@ -2,13 +2,14 @@
 #   filename:  codex_app_server_protocol.v2.schemas.json
 
 from __future__ import annotations
-from pydantic import BaseModel, ConfigDict, Field, RootModel
-from typing import Annotated, Any, Literal
+
 from enum import Enum
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 
 class CodexAppServerProtocolV2(BaseModel):
-    pass
     model_config = ConfigDict(
         populate_by_name=True,
     )
@@ -72,7 +73,7 @@ class CompletedAgentStatus(BaseModel):
         extra="forbid",
         populate_by_name=True,
     )
-    completed: str | None = None
+    completed: str | None
 
 
 class ErroredAgentStatus(BaseModel):
@@ -2551,9 +2552,6 @@ class RemoteSkillSummary(BaseModel):
 
 
 class RequestId(RootModel[str | int]):
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
     root: str | int
 
 
@@ -2758,9 +2756,6 @@ class ResponsesApiWebSearchAction(
         | OtherResponsesApiWebSearchAction
     ]
 ):
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
     root: (
         SearchResponsesApiWebSearchAction
         | OpenPageResponsesApiWebSearchAction
@@ -3432,9 +3427,6 @@ class ThreadForkParams(BaseModel):
 
 
 class ThreadId(RootModel[str]):
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
     root: str
 
 
@@ -6752,9 +6744,6 @@ class TurnItem(
         | ContextCompactionTurnItem
     ]
 ):
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
     root: (
         UserMessageTurnItem
         | AgentMessageTurnItem
@@ -7361,9 +7350,6 @@ class RealtimeEvent(
         | ErrorRealtimeEvent
     ]
 ):
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
     root: (
         SessionUpdatedRealtimeEvent
         | InputTranscriptDeltaRealtimeEvent
@@ -7416,9 +7402,6 @@ class ResponseItem(
         | OtherResponseItem
     ]
 ):
-    model_config = ConfigDict(
-        populate_by_name=True,
-    )
     root: (
         MessageResponseItem
         | ReasoningResponseItem
