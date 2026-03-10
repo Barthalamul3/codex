@@ -9,8 +9,9 @@ use codex_utils_image::PromptImageMode;
 use serde::Deserialize;
 use tokio::fs;
 
-use crate::features::Feature;
 use crate::function_tool::FunctionCallError;
+use crate::original_image_detail::can_request_original_image_detail;
+use crate::original_image_detail::should_force_original_image_detail;
 use crate::protocol::EventMsg;
 use crate::protocol::ViewImageToolCallEvent;
 use crate::tools::context::ToolInvocation;
@@ -28,6 +29,13 @@ const VIEW_IMAGE_UNSUPPORTED_MESSAGE: &str =
 #[derive(Deserialize)]
 struct ViewImageArgs {
     path: String,
+    detail: Option<ViewImageDetail>,
+}
+
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum ViewImageDetail {
+    Original,
 }
 
 #[async_trait]
@@ -84,8 +92,13 @@ impl ToolHandler for ViewImageHandler {
         }
         let event_path = abs_path.clone();
 
-        let use_original_detail = turn.config.features.enabled(Feature::ImageDetailOriginal)
-            && turn.model_info.supports_image_detail_original;
+        let can_request_original_detail =
+            can_request_original_image_detail(turn.features.get(), &turn.model_info);
+        let force_original_detail =
+            should_force_original_image_detail(turn.features.get(), &turn.model_info);
+        let use_original_detail = force_original_detail
+            || (can_request_original_detail
+                && matches!(args.detail, Some(ViewImageDetail::Original)));
         let image_mode = if use_original_detail {
             PromptImageMode::Original
         } else {

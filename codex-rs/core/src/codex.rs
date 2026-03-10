@@ -406,12 +406,6 @@ impl Codex {
 
         let allowed_skills_for_implicit_invocation =
             loaded_skills.allowed_skills_for_implicit_invocation();
-        let user_instructions = get_user_instructions(
-            &config,
-            Some(&allowed_skills_for_implicit_invocation),
-            Some(loaded_plugins.capability_summaries()),
-        )
-        .await;
 
         let exec_policy = if crate::guardian::is_guardian_subagent_source(&session_source) {
             // Guardian review should rely on the built-in shell safety checks,
@@ -451,6 +445,13 @@ impl Codex {
             .clone()
             .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
             .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
+        let user_instructions = get_user_instructions(
+            &config,
+            Some(&model_info),
+            Some(&allowed_skills_for_implicit_invocation),
+            Some(loaded_plugins.capability_summaries()),
+        )
+        .await;
 
         // Respect thread-start tools. When missing (resumed/forked threads), read from the db
         // first, then fall back to rollout-file tools.

@@ -36,8 +36,8 @@ use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::exec::ExecExpiration;
 use crate::exec_env::create_env;
-use crate::features::Feature;
 use crate::function_tool::FunctionCallError;
+use crate::original_image_detail::normalize_output_image_detail;
 use crate::sandboxing::CommandSpec;
 use crate::sandboxing::SandboxManager;
 use crate::sandboxing::SandboxPermissions;
@@ -1475,7 +1475,7 @@ fn emitted_image_content_item(
 ) -> FunctionCallOutputContentItem {
     FunctionCallOutputContentItem::InputImage {
         image_url,
-        detail: detail.or_else(|| default_output_image_detail_for_turn(turn)),
+        detail: normalize_output_image_detail(turn.features.get(), &turn.model_info, detail),
     }
 }
 
@@ -1488,12 +1488,6 @@ fn validate_emitted_image_url(image_url: &str) -> Result<(), String> {
     } else {
         Err("codex.emitImage only accepts data URLs".to_string())
     }
-}
-
-fn default_output_image_detail_for_turn(turn: &TurnContext) -> Option<ImageDetail> {
-    (turn.config.features.enabled(Feature::ImageDetailOriginal)
-        && turn.model_info.supports_image_detail_original)
-        .then_some(ImageDetail::Original)
 }
 
 fn build_exec_result_content_items(
@@ -2022,8 +2016,11 @@ mod tests {
         let (_session, mut turn) = make_session_and_context().await;
         Arc::make_mut(&mut turn.config)
             .features
-            .enable(Feature::ImageDetailOriginal)
+            .enable(Feature::ImageDetailOriginalAlways)
             .expect("test config should allow feature update");
+        turn.features
+            .enable(Feature::ImageDetailOriginalAlways)
+            .expect("test turn features should allow feature update");
         turn.model_info.supports_image_detail_original = true;
 
         let content_item =
@@ -2034,6 +2031,52 @@ mod tests {
             FunctionCallOutputContentItem::InputImage {
                 image_url: "data:image/png;base64,AAA".to_string(),
                 detail: Some(ImageDetail::Original),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn emitted_image_content_item_allows_explicit_original_detail_when_enabled() {
+        let (_session, mut turn) = make_session_and_context().await;
+        Arc::make_mut(&mut turn.config)
+            .features
+            .enable(Feature::ImageDetailOriginal)
+            .expect("test config should allow feature update");
+        turn.features
+            .enable(Feature::ImageDetailOriginal)
+            .expect("test turn features should allow feature update");
+        turn.model_info.supports_image_detail_original = true;
+
+        let content_item = emitted_image_content_item(
+            &turn,
+            "data:image/png;base64,AAA".to_string(),
+            Some(ImageDetail::Original),
+        );
+
+        assert_eq!(
+            content_item,
+            FunctionCallOutputContentItem::InputImage {
+                image_url: "data:image/png;base64,AAA".to_string(),
+                detail: Some(ImageDetail::Original),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn emitted_image_content_item_drops_explicit_original_detail_when_disabled() {
+        let (_session, turn) = make_session_and_context().await;
+
+        let content_item = emitted_image_content_item(
+            &turn,
+            "data:image/png;base64,AAA".to_string(),
+            Some(ImageDetail::Original),
+        );
+
+        assert_eq!(
+            content_item,
+            FunctionCallOutputContentItem::InputImage {
+                image_url: "data:image/png;base64,AAA".to_string(),
+                detail: None,
             }
         );
     }
