@@ -180,3 +180,37 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::ImageGenerationBegin(_) => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::should_persist_response_item_for_memories;
+    use codex_protocol::models::ResponseItem;
+
+    fn user_message() -> ResponseItem {
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![],
+            end_turn: None,
+            phase: None,
+        }
+    }
+
+    #[test]
+    fn keeps_user_messages_for_memories() {
+        let item = user_message();
+        assert!(should_persist_response_item_for_memories(&item));
+    }
+
+    #[test]
+    fn drops_developer_messages_for_memories() {
+        let item = ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![],
+            end_turn: None,
+            phase: None,
+        };
+        assert!(!should_persist_response_item_for_memories(&item));
+    }
+}

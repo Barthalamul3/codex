@@ -103,6 +103,13 @@ pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
         .any(|definition| definition.matches_text(text))
 }
 
+pub(crate) fn is_memory_excluded_contextual_user_fragment(content_item: &ContentItem) -> bool {
+    let ContentItem::InputText { text } = content_item else {
+        return false;
+    };
+    AGENTS_MD_FRAGMENT.matches_text(text) || SKILL_FRAGMENT.matches_text(text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +142,45 @@ mod tests {
         assert!(!is_contextual_user_fragment(&ContentItem::InputText {
             text: "hello".to_string(),
         }));
+    }
+
+    #[test]
+    fn excludes_agents_fragment_for_memories() {
+        assert!(is_memory_excluded_contextual_user_fragment(
+            &ContentItem::InputText {
+                text: "# AGENTS.md instructions for /tmp\n\n<INSTRUCTIONS>\nbody\n</INSTRUCTIONS>"
+                    .to_string(),
+            }
+        ));
+    }
+
+    #[test]
+    fn excludes_skill_fragment_for_memories() {
+        assert!(is_memory_excluded_contextual_user_fragment(
+            &ContentItem::InputText {
+                text:
+                    "<skill>\n<name>demo</name>\n<path>skills/demo/SKILL.md</path>\nbody\n</skill>"
+                        .to_string(),
+            }
+        ));
+    }
+
+    #[test]
+    fn keeps_environment_context_for_memories() {
+        assert!(!is_memory_excluded_contextual_user_fragment(
+            &ContentItem::InputText {
+                text: "<environment_context>\n<cwd>/tmp</cwd>\n</environment_context>".to_string(),
+            }
+        ));
+    }
+
+    #[test]
+    fn keeps_subagent_notifications_for_memories() {
+        assert!(!is_memory_excluded_contextual_user_fragment(
+            &ContentItem::InputText {
+                text: "<subagent_notification>{\"agent_id\":\"a\",\"status\":\"completed\"}</subagent_notification>"
+                    .to_string(),
+            }
+        ));
     }
 }
