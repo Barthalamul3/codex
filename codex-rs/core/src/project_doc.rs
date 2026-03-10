@@ -560,8 +560,10 @@ mod tests {
         cfg.features
             .set(features)
             .expect("test config should allow js_repl image detail settings");
+        let mut model_info = crate::test_support::construct_model_info_offline("gpt-5-codex", &cfg);
+        model_info.supports_image_detail_original = false;
 
-        let res = get_user_instructions(&cfg, None, None, None)
+        let res = get_user_instructions(&cfg, Some(&model_info), None, None)
             .await
             .expect("js_repl instructions expected");
 
