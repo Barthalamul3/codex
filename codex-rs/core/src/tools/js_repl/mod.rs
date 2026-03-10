@@ -1995,7 +1995,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn emitted_image_content_item_preserves_explicit_detail() {
+    async fn emitted_image_content_item_drops_unsupported_explicit_detail() {
         let (_session, turn) = make_session_and_context().await;
         let content_item = emitted_image_content_item(
             &turn,
@@ -2006,7 +2006,7 @@ mod tests {
             content_item,
             FunctionCallOutputContentItem::InputImage {
                 image_url: "data:image/png;base64,AAA".to_string(),
-                detail: Some(ImageDetail::Low),
+                detail: None,
             }
         );
     }
@@ -3151,7 +3151,60 @@ await codex.emitImage({ bytes: png, mimeType: "image/png", detail: "ultra" });
             )
             .await
             .expect_err("invalid detail should fail");
-        assert!(err.to_string().contains("expected detail to be one of"));
+        assert!(
+            err.to_string()
+                .contains("only supports detail \"original\"")
+        );
+        assert!(session.get_pending_input().await.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn js_repl_emit_image_rejects_non_original_supported_api_detail() -> anyhow::Result<()> {
+        if !can_run_js_repl_runtime_tests().await {
+            return Ok(());
+        }
+
+        let (session, turn) = make_session_and_context().await;
+        if !turn
+            .model_info
+            .input_modalities
+            .contains(&InputModality::Image)
+        {
+            return Ok(());
+        }
+
+        let session = Arc::new(session);
+        let turn = Arc::new(turn);
+        *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
+
+        let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::default()));
+        let manager = turn.js_repl.manager().await?;
+        let code = r#"
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+  "base64"
+);
+await codex.emitImage({ bytes: png, mimeType: "image/png", detail: "low" });
+"#;
+
+        let err = manager
+            .execute(
+                Arc::clone(&session),
+                turn,
+                tracker,
+                JsReplArgs {
+                    code: code.to_string(),
+                    timeout_ms: Some(15_000),
+                },
+            )
+            .await
+            .expect_err("non-original detail should fail");
+        assert!(
+            err.to_string()
+                .contains("only supports detail \"original\"")
+        );
         assert!(session.get_pending_input().await.is_empty());
 
         Ok(())

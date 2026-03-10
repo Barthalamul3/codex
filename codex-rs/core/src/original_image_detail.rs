@@ -25,18 +25,18 @@ pub(crate) fn normalize_output_image_detail(
     model_info: &ModelInfo,
     detail: Option<ImageDetail>,
 ) -> Option<ImageDetail> {
-    // `image_detail_original_always` intentionally preserves the legacy
-    // always-on behavior by forcing original detail whenever the model
-    // supports it, even if the caller requested a lower detail value.
+    // `original` is the only supported explicit detail override. Treat any
+    // other explicit detail value as absent, and let always-on mode force
+    // original when configured on a supported model.
     if should_force_original_image_detail(features, model_info) {
         return Some(ImageDetail::Original);
     }
 
     match detail {
-        Some(ImageDetail::Original) if !can_request_original_image_detail(features, model_info) => {
-            None
+        Some(ImageDetail::Original) if can_request_original_image_detail(features, model_info) => {
+            Some(ImageDetail::Original)
         }
-        other => other,
+        Some(ImageDetail::Original) | Some(_) | None => None,
     }
 }
 
@@ -109,6 +109,21 @@ mod tests {
         model_info.supports_image_detail_original = false;
         assert_eq!(
             normalize_output_image_detail(&features, &model_info, Some(ImageDetail::Original)),
+            None
+        );
+    }
+
+    #[test]
+    fn unsupported_non_original_detail_is_dropped_without_always_mode() {
+        let config = test_config();
+        let mut model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        model_info.supports_image_detail_original = true;
+        let mut features = Features::with_defaults();
+        features.enable(Feature::ImageDetailOriginal);
+
+        assert_eq!(
+            normalize_output_image_detail(&features, &model_info, Some(ImageDetail::Low)),
             None
         );
     }

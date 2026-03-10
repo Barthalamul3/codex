@@ -1215,14 +1215,9 @@ function parseImageDetail(detail) {
   if (typeof detail !== "string" || !detail) {
     throw new Error("codex.emitImage expected detail to be a non-empty string");
   }
-  if (
-    detail !== "auto" &&
-    detail !== "low" &&
-    detail !== "high" &&
-    detail !== "original"
-  ) {
+  if (detail !== "original") {
     throw new Error(
-      'codex.emitImage expected detail to be one of "auto", "low", "high", or "original"',
+      'codex.emitImage only supports detail "original"; omit detail for default behavior',
     );
   }
   return detail;

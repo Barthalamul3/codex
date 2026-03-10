@@ -126,8 +126,8 @@ pub enum Feature {
     ChildAgentsMd,
     /// Allow the model to request `detail: "original"` image outputs on supported models.
     ImageDetailOriginal,
-    /// Always emit `detail: "original"` image outputs on supported models,
-    /// overriding any explicit detail value.
+    /// Always default supported image outputs to `detail: "original"` on
+    /// supported models.
     ImageDetailOriginalAlways,
     /// Enforce UTF8 output in Powershell.
     PowershellUtf8,

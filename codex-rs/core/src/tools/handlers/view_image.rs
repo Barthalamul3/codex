@@ -74,6 +74,10 @@ impl ToolHandler for ViewImageHandler {
         };
 
         let args: ViewImageArgs = parse_arguments(&arguments)?;
+        // `view_image` accepts only its documented detail values: omit
+        // `detail` for the default path or set it to `original`.
+        // Other values remain invalid rather than being silently
+        // reinterpreted, even when always-on mode is enabled.
         let detail = match args.detail.as_deref() {
             None => None,
             Some("original") => Some(ViewImageDetail::Original),
