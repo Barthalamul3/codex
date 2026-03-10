@@ -25,6 +25,9 @@ pub(crate) fn normalize_output_image_detail(
     model_info: &ModelInfo,
     detail: Option<ImageDetail>,
 ) -> Option<ImageDetail> {
+    // `image_detail_original_always` intentionally preserves the legacy
+    // always-on behavior by forcing original detail whenever the model
+    // supports it, even if the caller requested a lower detail value.
     if should_force_original_image_detail(features, model_info) {
         return Some(ImageDetail::Original);
     }
