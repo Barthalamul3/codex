@@ -2718,6 +2718,7 @@ mod tests {
     use codex_protocol::protocol::RateLimitWindow;
     use codex_protocol::protocol::TokenUsage;
     use codex_protocol::protocol::TokenUsageInfo;
+    use codex_protocol::protocol::TurnStartedEvent;
     use pretty_assertions::assert_eq;
     use tokio::sync::Mutex;
     use tokio::sync::mpsc;
