@@ -11,7 +11,6 @@ use tokio::fs;
 
 use crate::function_tool::FunctionCallError;
 use crate::original_image_detail::can_request_original_image_detail;
-use crate::original_image_detail::should_force_original_image_detail;
 use crate::protocol::EventMsg;
 use crate::protocol::ViewImageToolCallEvent;
 use crate::tools::context::ToolInvocation;
@@ -77,7 +76,7 @@ impl ToolHandler for ViewImageHandler {
         // `view_image` accepts only its documented detail values: omit
         // `detail` for the default path or set it to `original`.
         // Other values remain invalid rather than being silently
-        // reinterpreted, even when always-on mode is enabled.
+        // reinterpreted.
         let detail = match args.detail.as_deref() {
             None => None,
             Some("original") => Some(ViewImageDetail::Original),
@@ -107,10 +106,8 @@ impl ToolHandler for ViewImageHandler {
 
         let can_request_original_detail =
             can_request_original_image_detail(turn.features.get(), &turn.model_info);
-        let force_original_detail =
-            should_force_original_image_detail(turn.features.get(), &turn.model_info);
-        let use_original_detail = force_original_detail
-            || (can_request_original_detail && matches!(detail, Some(ViewImageDetail::Original)));
+        let use_original_detail =
+            can_request_original_detail && matches!(detail, Some(ViewImageDetail::Original));
         let image_mode = if use_original_detail {
             PromptImageMode::Original
         } else {

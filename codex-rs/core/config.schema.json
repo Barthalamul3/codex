@@ -368,9 +368,6 @@
             "image_detail_original": {
               "type": "boolean"
             },
-            "image_detail_original_always": {
-              "type": "boolean"
-            },
             "image_generation": {
               "type": "boolean"
             },
@@ -1844,9 +1841,6 @@
           "type": "boolean"
         },
         "image_detail_original": {
-          "type": "boolean"
-        },
-        "image_detail_original_always": {
           "type": "boolean"
         },
         "image_generation": {

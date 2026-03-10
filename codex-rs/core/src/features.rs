@@ -126,9 +126,6 @@ pub enum Feature {
     ChildAgentsMd,
     /// Allow the model to request `detail: "original"` image outputs on supported models.
     ImageDetailOriginal,
-    /// Always default supported image outputs to `detail: "original"` on
-    /// supported models.
-    ImageDetailOriginalAlways,
     /// Enforce UTF8 output in Powershell.
     PowershellUtf8,
     /// Compress request bodies (zstd) when sending streaming requests to codex-backend.
@@ -575,12 +572,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::ImageDetailOriginalAlways,
-        key: "image_detail_original_always",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::ApplyPatchFreeform,
         key: "apply_patch_freeform",
         stage: Stage::UnderDevelopment,
@@ -962,17 +953,12 @@ mod tests {
     }
 
     #[test]
-    fn image_detail_original_features_are_under_development() {
+    fn image_detail_original_feature_is_under_development() {
         assert_eq!(
             Feature::ImageDetailOriginal.stage(),
             Stage::UnderDevelopment
         );
         assert_eq!(Feature::ImageDetailOriginal.default_enabled(), false);
-        assert_eq!(
-            Feature::ImageDetailOriginalAlways.stage(),
-            Stage::UnderDevelopment
-        );
-        assert_eq!(Feature::ImageDetailOriginalAlways.default_enabled(), false);
     }
 
     #[test]

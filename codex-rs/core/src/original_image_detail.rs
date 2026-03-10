@@ -7,17 +7,7 @@ pub(crate) fn can_request_original_image_detail(
     features: &Features,
     model_info: &ModelInfo,
 ) -> bool {
-    model_info.supports_image_detail_original
-        && (features.enabled(Feature::ImageDetailOriginal)
-            || features.enabled(Feature::ImageDetailOriginalAlways))
-}
-
-pub(crate) fn should_force_original_image_detail(
-    features: &Features,
-    model_info: &ModelInfo,
-) -> bool {
-    can_request_original_image_detail(features, model_info)
-        && features.enabled(Feature::ImageDetailOriginalAlways)
+    model_info.supports_image_detail_original && features.enabled(Feature::ImageDetailOriginal)
 }
 
 pub(crate) fn normalize_output_image_detail(
@@ -25,13 +15,6 @@ pub(crate) fn normalize_output_image_detail(
     model_info: &ModelInfo,
     detail: Option<ImageDetail>,
 ) -> Option<ImageDetail> {
-    // `original` is the only supported explicit detail override. Treat any
-    // other explicit detail value as absent, and let always-on mode force
-    // original when configured on a supported model.
-    if should_force_original_image_detail(features, model_info) {
-        return Some(ImageDetail::Original);
-    }
-
     match detail {
         Some(ImageDetail::Original) if can_request_original_image_detail(features, model_info) => {
             Some(ImageDetail::Original)
@@ -59,7 +42,6 @@ mod tests {
         features.enable(Feature::ImageDetailOriginal);
 
         assert!(can_request_original_image_detail(&features, &model_info));
-        assert!(!should_force_original_image_detail(&features, &model_info));
         assert_eq!(
             normalize_output_image_detail(&features, &model_info, Some(ImageDetail::Original)),
             Some(ImageDetail::Original)
@@ -67,27 +49,6 @@ mod tests {
         assert_eq!(
             normalize_output_image_detail(&features, &model_info, None),
             None
-        );
-    }
-
-    #[test]
-    fn image_detail_original_always_feature_forces_original() {
-        let config = test_config();
-        let mut model_info =
-            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
-        model_info.supports_image_detail_original = true;
-        let mut features = Features::with_defaults();
-        features.enable(Feature::ImageDetailOriginalAlways);
-
-        assert!(can_request_original_image_detail(&features, &model_info));
-        assert!(should_force_original_image_detail(&features, &model_info));
-        assert_eq!(
-            normalize_output_image_detail(&features, &model_info, None),
-            Some(ImageDetail::Original)
-        );
-        assert_eq!(
-            normalize_output_image_detail(&features, &model_info, Some(ImageDetail::Low)),
-            Some(ImageDetail::Original)
         );
     }
 
@@ -114,7 +75,7 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_non_original_detail_is_dropped_without_always_mode() {
+    fn unsupported_non_original_detail_is_dropped() {
         let config = test_config();
         let mut model_info =
             ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
