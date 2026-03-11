@@ -2,11 +2,9 @@
 #   filename:  codex_app_server_protocol.v2.schemas.json
 
 from __future__ import annotations
-
-from enum import Enum
-from typing import Annotated, Any, Literal
-
 from pydantic import BaseModel, ConfigDict, Field, RootModel
+from typing import Annotated, Any, Literal
+from enum import Enum
 
 
 class CodexAppServerProtocolV2(BaseModel):
@@ -1420,8 +1418,8 @@ class FileSystemPermissions(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    read: List[AbsolutePathBuf] | None = None
-    write: List[AbsolutePathBuf] | None = None
+    read: list[AbsolutePathBuf] | None = None
+    write: list[AbsolutePathBuf] | None = None
 
 
 class ForcedLoginMethod(Enum):
@@ -1477,7 +1475,7 @@ class FuzzyFileSearchSessionUpdatedNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    files: List[FuzzyFileSearchResult]
+    files: list[FuzzyFileSearchResult]
     query: str
     session_id: Annotated[str, Field(alias="sessionId")]
 
@@ -1501,8 +1499,8 @@ class GhostCommit(BaseModel):
     )
     id: str
     parent: str | None = None
-    preexisting_untracked_dirs: List[str]
-    preexisting_untracked_files: List[str]
+    preexisting_untracked_dirs: list[str]
+    preexisting_untracked_files: list[str]
 
 
 class GitInfo(BaseModel):
@@ -1785,7 +1783,7 @@ class BundleIdsMacOsAutomationPermission(BaseModel):
         extra="forbid",
         populate_by_name=True,
     )
-    bundle_ids: List[str]
+    bundle_ids: list[str]
 
 
 class MacOsAutomationPermission(
@@ -2605,7 +2603,7 @@ class MessageResponseItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    content: List[ContentItem]
+    content: list[ContentItem]
     end_turn: bool | None = None
     id: str | None = None
     phase: MessagePhase | None = None
@@ -2617,7 +2615,7 @@ class ReasoningResponseItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    content: List[ReasoningItemContent] | None = None
+    content: list[ReasoningItemContent] | None = None
     encrypted_content: str | None = None
     id: str
     summary: list[ReasoningItemReasoningSummary]
@@ -2714,7 +2712,7 @@ class SearchResponsesApiWebSearchAction(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    queries: List[str] | None = None
+    queries: list[str] | None = None
     query: str | None = None
     type: Annotated[
         Literal["search"], Field(title="SearchResponsesApiWebSearchActionType")
@@ -2798,7 +2796,7 @@ class ApprovedExecpolicyAmendment(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    proposed_execpolicy_amendment: List[str]
+    proposed_execpolicy_amendment: list[str]
 
 
 class ApprovedExecpolicyAmendmentReviewDecision(BaseModel):
@@ -2962,7 +2960,7 @@ class SandboxWorkspaceWrite(BaseModel):
     exclude_slash_tmp: bool | None = False
     exclude_tmpdir_env_var: bool | None = False
     network_access: bool | None = False
-    writable_roots: List[str] | None = []
+    writable_roots: list[str] | None = []
 
 
 class ItemAgentMessageDeltaServerNotification(BaseModel):
@@ -3276,7 +3274,7 @@ class SkillsRemoteReadResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    data: List[RemoteSkillSummary]
+    data: list[RemoteSkillSummary]
 
 
 class SkillsRemoteWriteParams(BaseModel):
@@ -3463,7 +3461,7 @@ class ReasoningThreadItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    content: List[str] | None = []
+    content: list[str] | None = []
     id: str
     summary: list[str] | None = []
     type: Annotated[Literal["reasoning"], Field(title="ReasoningThreadItemType")]
@@ -4022,7 +4020,7 @@ class AgentMessageTurnItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    content: List[AgentMessageContent]
+    content: list[AgentMessageContent]
     id: str
     phase: Annotated[
         MessagePhase | None,
@@ -4185,7 +4183,7 @@ class SearchWebSearchAction(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    queries: List[str] | None = None
+    queries: list[str] | None = None
     query: str | None = None
     type: Annotated[Literal["search"], Field(title="SearchWebSearchActionType")]
 
@@ -4340,7 +4338,7 @@ class AppMetadata(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    categories: List[str] | None = None
+    categories: list[str] | None = None
     developer: str | None = None
     first_party_requires_install: Annotated[
         bool | None, Field(alias="firstPartyRequiresInstall")
@@ -6071,7 +6069,7 @@ class PluginMarketplaceEntry(BaseModel):
     )
     name: str
     path: AbsolutePathBuf
-    plugins: List[PluginSummary]
+    plugins: list[PluginSummary]
 
 
 class RateLimitSnapshot(BaseModel):
@@ -6110,7 +6108,7 @@ class RealtimeHandoffRequested(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    active_transcript: List[RealtimeTranscriptEntry]
+    active_transcript: list[RealtimeTranscriptEntry]
     handoff_id: str
     input_transcript: str
     item_id: str
@@ -6202,7 +6200,7 @@ class ReviewOutputEvent(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    findings: List[ReviewFinding]
+    findings: list[ReviewFinding]
     overall_confidence_score: float
     overall_correctness: str
     overall_explanation: str
@@ -6435,7 +6433,7 @@ class SkillDependencies(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    tools: List[SkillToolDependency]
+    tools: list[SkillToolDependency]
 
 
 class SkillMetadata(BaseModel):
@@ -6463,15 +6461,15 @@ class SkillsListEntry(BaseModel):
         populate_by_name=True,
     )
     cwd: str
-    errors: List[SkillErrorInfo]
-    skills: List[SkillMetadata]
+    errors: list[SkillErrorInfo]
+    skills: list[SkillMetadata]
 
 
 class SkillsListResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    data: List[SkillsListEntry]
+    data: list[SkillsListEntry]
 
 
 class ThreadSpawn(BaseModel):
@@ -6505,7 +6503,7 @@ class UserMessageThreadItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    content: List[UserInput]
+    content: list[UserInput]
     id: str
     type: Annotated[Literal["userMessage"], Field(title="UserMessageThreadItemType")]
 
@@ -6514,7 +6512,7 @@ class FileChangeThreadItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    changes: List[FileUpdateChange]
+    changes: list[FileUpdateChange]
     id: str
     status: PatchApplyStatus
     type: Annotated[Literal["fileChange"], Field(title="FileChangeThreadItemType")]
@@ -6738,7 +6736,7 @@ class UserMessageTurnItem(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    content: List[UserInput]
+    content: list[UserInput]
     id: str
     type: Annotated[Literal["UserMessage"], Field(title="UserMessageTurnItemType")]
 
@@ -6929,7 +6927,7 @@ class AppListUpdatedNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    data: List[AppInfo]
+    data: list[AppInfo]
 
 
 class AppsListResponse(BaseModel):
@@ -7229,7 +7227,7 @@ class ExternalAgentConfigDetectResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    items: List[ExternalAgentConfigMigrationItem]
+    items: list[ExternalAgentConfigMigrationItem]
 
 
 class ExternalAgentConfigImportParams(BaseModel):
@@ -7321,7 +7319,7 @@ class PluginListResponse(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
-    marketplaces: List[PluginMarketplaceEntry]
+    marketplaces: list[PluginMarketplaceEntry]
 
 
 class ProfileV2(BaseModel):
@@ -7930,8 +7928,8 @@ class ConfigReadResponse(BaseModel):
         populate_by_name=True,
     )
     config: Config
-    layers: List[ConfigLayer] | None = None
-    origins: Dict[str, ConfigLayerMetadata]
+    layers: list[ConfigLayer] | None = None
+    origins: dict[str, ConfigLayerMetadata]
 
 
 class RealtimeConversationRealtimeEventMsg(BaseModel):
