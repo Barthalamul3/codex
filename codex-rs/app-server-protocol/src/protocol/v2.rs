@@ -262,6 +262,7 @@ impl From<CoreAskForApproval> for AskForApproval {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case", export_to = "v2/")]
+/// [UNSTABLE] Controls whether approvals remain manual or are automatically reviewed.
 pub enum ApprovalReviewPolicy {
     ManualOnly,
     AutoOnly,
@@ -548,9 +549,9 @@ pub struct ProfileV2 {
     pub model_provider: Option<String>,
     #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
-    /// Optional override for how approval requests are reviewed in this
-    /// profile. Use `manual-only` for user approval prompts or `auto-only` for
-    /// automatic approval review.
+    /// [UNSTABLE] Optional override for how approval requests are reviewed in
+    /// this profile. Use `manual-only` for user approval prompts or
+    /// `auto-only` for automatic approval review.
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     pub service_tier: Option<ServiceTier>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
@@ -651,7 +652,7 @@ pub struct Config {
     pub model_provider: Option<String>,
     #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
-    /// Optional default for how approval requests are reviewed. Use
+    /// [UNSTABLE] Optional default for how approval requests are reviewed. Use
     /// `manual-only` for user approval prompts or `auto-only` for automatic
     /// approval review.
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
@@ -2308,8 +2309,8 @@ pub struct ThreadStartParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
-    /// Override whether approvals stay manual or are automatically reviewed
-    /// for this thread and subsequent turns.
+    /// [UNSTABLE] Override whether approvals stay manual or are automatically
+    /// reviewed for this thread and subsequent turns.
     #[ts(optional = nullable)]
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     #[ts(optional = nullable)]
@@ -2374,7 +2375,8 @@ pub struct ThreadStartResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
-    /// Whether approvals remain manual or are automatically reviewed.
+    /// [UNSTABLE] Whether approvals remain manual or are automatically
+    /// reviewed.
     pub approval_review_policy: ApprovalReviewPolicy,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -2428,8 +2430,8 @@ pub struct ThreadResumeParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
-    /// Override whether approvals stay manual or are automatically reviewed
-    /// for this thread and subsequent turns.
+    /// [UNSTABLE] Override whether approvals stay manual or are automatically
+    /// reviewed for this thread and subsequent turns.
     #[ts(optional = nullable)]
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     #[ts(optional = nullable)]
@@ -2460,7 +2462,8 @@ pub struct ThreadResumeResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
-    /// Whether approvals remain manual or are automatically reviewed.
+    /// [UNSTABLE] Whether approvals remain manual or are automatically
+    /// reviewed.
     pub approval_review_policy: ApprovalReviewPolicy,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -2505,8 +2508,8 @@ pub struct ThreadForkParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
-    /// Override whether approvals stay manual or are automatically reviewed
-    /// for this thread and subsequent turns.
+    /// [UNSTABLE] Override whether approvals stay manual or are automatically
+    /// reviewed for this thread and subsequent turns.
     #[ts(optional = nullable)]
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     #[ts(optional = nullable)]
@@ -2537,7 +2540,8 @@ pub struct ThreadForkResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
-    /// Whether approvals remain manual or are automatically reviewed.
+    /// [UNSTABLE] Whether approvals remain manual or are automatically
+    /// reviewed.
     pub approval_review_policy: ApprovalReviewPolicy,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -3595,8 +3599,8 @@ pub struct TurnStartParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
-    /// Override whether approvals stay manual or are automatically reviewed
-    /// for this turn and subsequent turns.
+    /// [UNSTABLE] Override whether approvals stay manual or are automatically
+    /// reviewed for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     /// Override the sandbox policy for this turn and subsequent turns.
@@ -3926,6 +3930,7 @@ pub enum ThreadItem {
         /// The duration of the command execution in milliseconds.
         #[ts(type = "number | null")]
         duration_ms: Option<i64>,
+        /// [UNSTABLE] Approval state for this command execution.
         approval: Option<ItemApprovalState>,
     },
     #[serde(rename_all = "camelCase")]
@@ -3934,6 +3939,7 @@ pub enum ThreadItem {
         id: String,
         changes: Vec<FileUpdateChange>,
         status: PatchApplyStatus,
+        /// [UNSTABLE] Approval state for this file change.
         approval: Option<ItemApprovalState>,
     },
     #[serde(rename_all = "camelCase")]
@@ -3949,6 +3955,7 @@ pub enum ThreadItem {
         /// The duration of the MCP tool call in milliseconds.
         #[ts(type = "number | null")]
         duration_ms: Option<i64>,
+        /// [UNSTABLE] Approval state for this MCP tool call.
         approval: Option<ItemApprovalState>,
     },
     #[serde(rename_all = "camelCase")]
@@ -4047,6 +4054,7 @@ pub enum ItemApprovalStatus {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+/// [UNSTABLE] Whether a pending approval is waiting on manual input or automatic review.
 pub enum ItemApprovalPendingKind {
     ManualRequest,
     AutomaticReview,
@@ -4055,6 +4063,7 @@ pub enum ItemApprovalPendingKind {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+/// [UNSTABLE] Who ultimately resolved an approval request.
 pub enum ItemApprovalResolvedBy {
     User,
     Automatic,
@@ -4063,6 +4072,7 @@ pub enum ItemApprovalResolvedBy {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+/// [UNSTABLE] Lifecycle state for an automatic approval review.
 pub enum AutomaticApprovalReviewStatus {
     InProgress,
     Approved,
@@ -4072,6 +4082,7 @@ pub enum AutomaticApprovalReviewStatus {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export_to = "v2/")]
+/// [UNSTABLE] Risk level assigned by automatic approval review.
 pub enum RiskLevel {
     Low,
     Medium,
@@ -4088,6 +4099,7 @@ impl From<CoreRiskLevel> for RiskLevel {
     }
 }
 
+/// [UNSTABLE] Automatic approval review details for an item.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4120,6 +4132,7 @@ impl AutomaticApprovalReview {
     }
 }
 
+/// [UNSTABLE] Approval state attached to a tool item.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -4565,6 +4578,7 @@ pub struct ItemStartedNotification {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+/// [UNSTABLE] Sent when automatic approval review begins for an item.
 pub struct AutoApprovalReviewStartedNotification {
     pub item: ThreadItem,
     pub thread_id: String,
