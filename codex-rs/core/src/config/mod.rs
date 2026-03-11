@@ -637,6 +637,18 @@ impl ConfigBuilder {
 }
 
 impl Config {
+    /// Returns whether the merged config layers selected `[permissions]`
+    /// profiles, independent of any harness-only sandbox overrides.
+    pub fn uses_permission_profiles(&self) -> bool {
+        matches!(
+            permission_config_syntax_from_loaded_layers(
+                &self.config_layer_stack,
+                self.active_profile.as_deref(),
+            ),
+            Some(PermissionConfigSyntax::Profiles)
+        )
+    }
+
     /// This is the preferred way to create an instance of [Config].
     pub async fn load_with_cli_overrides(
         cli_overrides: Vec<(String, TomlValue)>,
@@ -1640,6 +1652,18 @@ fn resolve_permission_config_syntax(
             None
         }
     })
+}
+
+fn permission_config_syntax_from_loaded_layers(
+    config_layer_stack: &ConfigLayerStack,
+    active_profile_name: Option<&str>,
+) -> Option<PermissionConfigSyntax> {
+    let cfg: ConfigToml = config_layer_stack.effective_config().try_into().ok()?;
+    let profile_sandbox_mode = active_profile_name
+        .and_then(|profile_name| cfg.profiles.get(profile_name))
+        .and_then(|profile| profile.sandbox_mode);
+
+    resolve_permission_config_syntax(config_layer_stack, &cfg, None, profile_sandbox_mode)
 }
 
 fn add_additional_file_system_writes(

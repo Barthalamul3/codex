@@ -42,10 +42,46 @@ pub async fn spawn_command_under_seatbelt(
     sandbox_policy_cwd: &Path,
     stdio_policy: StdioPolicy,
     network: Option<&NetworkProxy>,
+    env: HashMap<String, String>,
+) -> std::io::Result<Child> {
+    spawn_command_under_seatbelt_for_policies(
+        command,
+        command_cwd,
+        sandbox_policy,
+        &FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, sandbox_policy_cwd),
+        NetworkSandboxPolicy::from(sandbox_policy),
+        sandbox_policy_cwd,
+        stdio_policy,
+        network,
+        env,
+    )
+    .await
+}
+
+/// Spawn a command under macOS Seatbelt using the already-resolved split
+/// filesystem and network policies instead of re-deriving them from the legacy
+/// [`SandboxPolicy`] projection.
+#[allow(clippy::too_many_arguments)]
+pub async fn spawn_command_under_seatbelt_for_policies(
+    command: Vec<String>,
+    command_cwd: PathBuf,
+    _sandbox_policy: &SandboxPolicy,
+    file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    network_sandbox_policy: NetworkSandboxPolicy,
+    sandbox_policy_cwd: &Path,
+    stdio_policy: StdioPolicy,
+    network: Option<&NetworkProxy>,
     mut env: HashMap<String, String>,
 ) -> std::io::Result<Child> {
-    let args =
-        create_seatbelt_command_args(command, sandbox_policy, sandbox_policy_cwd, false, network);
+    let args = create_seatbelt_command_args_for_policies_with_extensions(
+        command,
+        file_system_sandbox_policy,
+        network_sandbox_policy,
+        sandbox_policy_cwd,
+        false,
+        network,
+        None,
+    );
     let arg0 = None;
     env.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
     spawn_child_async(SpawnChildRequest {
@@ -53,7 +89,7 @@ pub async fn spawn_command_under_seatbelt(
         args,
         arg0,
         cwd: command_cwd,
-        network_sandbox_policy: NetworkSandboxPolicy::from(sandbox_policy),
+        network_sandbox_policy,
         network,
         stdio_policy,
         env,
@@ -324,6 +360,7 @@ fn dynamic_network_policy_for_network(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn create_seatbelt_command_args(
     command: Vec<String>,
     sandbox_policy: &SandboxPolicy,

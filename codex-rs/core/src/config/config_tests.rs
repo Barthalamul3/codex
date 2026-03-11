@@ -464,6 +464,47 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
         config.permissions.network_sandbox_policy,
         NetworkSandboxPolicy::Restricted
     );
+    assert!(config.uses_permission_profiles());
+    Ok(())
+}
+
+#[tokio::test]
+async fn uses_permission_profiles_ignores_harness_sandbox_mode_override() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cwd = TempDir::new()?;
+    let docs = cwd.path().join("docs");
+    let private = docs.join("private");
+    std::fs::create_dir_all(&private)?;
+    std::fs::write(cwd.path().join(".git"), "gitdir: nowhere")?;
+    let escape_toml_path =
+        |path: &std::path::Path| path.display().to_string().replace('\\', "\\\\");
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        format!(
+            "default_permissions = \"limited-read-test\"\n\
+             [permissions.limited-read-test.filesystem]\n\
+             \":minimal\" = \"read\"\n\
+             \"{}\" = \"read\"\n\
+             \"{}\" = \"none\"\n\
+             \n\
+             [permissions.limited-read-test.network]\n\
+             enabled = true\n",
+            escape_toml_path(&docs),
+            escape_toml_path(&private),
+        ),
+    )?;
+
+    let config = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(cwd.path().to_path_buf()))
+        .harness_overrides(ConfigOverrides {
+            sandbox_mode: Some(SandboxMode::ReadOnly),
+            ..Default::default()
+        })
+        .build()
+        .await?;
+
+    assert!(config.uses_permission_profiles());
     Ok(())
 }
 

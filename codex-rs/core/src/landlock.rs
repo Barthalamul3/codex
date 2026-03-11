@@ -33,13 +33,46 @@ pub async fn spawn_command_under_linux_sandbox<P>(
 where
     P: AsRef<Path>,
 {
-    let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, sandbox_policy_cwd);
-    let network_sandbox_policy = NetworkSandboxPolicy::from(sandbox_policy);
+    spawn_command_under_linux_sandbox_for_policies(
+        codex_linux_sandbox_exe,
+        command,
+        command_cwd,
+        sandbox_policy,
+        &FileSystemSandboxPolicy::from_legacy_sandbox_policy(sandbox_policy, sandbox_policy_cwd),
+        NetworkSandboxPolicy::from(sandbox_policy),
+        sandbox_policy_cwd,
+        use_bwrap_sandbox,
+        stdio_policy,
+        network,
+        env,
+    )
+    .await
+}
+
+/// Spawn a command under the Linux sandbox helper using the already-resolved
+/// split filesystem and network policies instead of re-deriving them from the
+/// legacy [`SandboxPolicy`] projection.
+#[allow(clippy::too_many_arguments)]
+pub async fn spawn_command_under_linux_sandbox_for_policies<P>(
+    codex_linux_sandbox_exe: P,
+    command: Vec<String>,
+    command_cwd: PathBuf,
+    sandbox_policy: &SandboxPolicy,
+    file_system_sandbox_policy: &FileSystemSandboxPolicy,
+    network_sandbox_policy: NetworkSandboxPolicy,
+    sandbox_policy_cwd: &Path,
+    use_bwrap_sandbox: bool,
+    stdio_policy: StdioPolicy,
+    network: Option<&NetworkProxy>,
+    env: HashMap<String, String>,
+) -> std::io::Result<Child>
+where
+    P: AsRef<Path>,
+{
     let args = create_linux_sandbox_command_args_for_policies(
         command,
         sandbox_policy,
-        &file_system_sandbox_policy,
+        file_system_sandbox_policy,
         network_sandbox_policy,
         sandbox_policy_cwd,
         use_bwrap_sandbox,
