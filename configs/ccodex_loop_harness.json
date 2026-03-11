@@ -1,0 +1,68 @@
+{
+  "paths": {
+    "required": [
+      "docs/plans/2026-03-06-ccodex-memory-os.md",
+      "docs/ccodex-memory-os.md",
+      "docs/specs/ccodex-memory-os/scope_contract.yaml",
+      "docs/specs/ccodex-memory-os/quality_gate_contract.yaml",
+      "codex-rs/Cargo.toml",
+      "codex-rs/core/src/codex.rs"
+    ]
+  },
+  "commands": {
+    "format_check": [
+      "bash",
+      "-lc",
+      "cd codex-rs && cargo fmt --all --check"
+    ],
+    "typecheck_core": [
+      "bash",
+      "-lc",
+      "cd codex-rs && cargo test -p codex-core --no-run"
+    ],
+    "tests_retrieval": [
+      "bash",
+      "-lc",
+      "cd codex-rs && cargo test -p codex-core memory_os_retrieve -- --nocapture"
+    ],
+    "tests_consolidation": [
+      "bash",
+      "-lc",
+      "cd codex-rs && cargo test -p codex-core memory_os_consolidate -- --nocapture"
+    ],
+    "tests_observability": [
+      "bash",
+      "-lc",
+      "cd codex-rs && cargo test -p codex-core ccodex_memory_observability -- --nocapture"
+    ],
+    "tests_validation": [
+      "bash",
+      "-lc",
+      "cd codex-rs && cargo test -p codex-core live_shadow_memory -- --nocapture && cargo test -p codex-core reconstruct_history -- --nocapture && cargo test -p codex-core memory_os -- --nocapture"
+    ]
+  },
+  "profiles": {
+    "default": [
+      "format_check",
+      "typecheck_core",
+      "tests_validation"
+    ],
+    "ccodex-memory-os-06-retrieval": [
+      "format_check",
+      "tests_retrieval"
+    ],
+    "ccodex-memory-os-07-consolidation": [
+      "format_check",
+      "tests_consolidation"
+    ],
+    "ccodex-memory-os-08-observability": [
+      "format_check",
+      "tests_observability"
+    ],
+    "ccodex-memory-os-09-validation": [
+      "format_check",
+      "typecheck_core",
+      "tests_validation"
+    ]
+  }
+}

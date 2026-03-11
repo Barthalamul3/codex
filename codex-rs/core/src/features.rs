@@ -117,6 +117,10 @@ pub enum Feature {
     Sqlite,
     /// Enable startup memory extraction and file-backed memory consolidation.
     MemoryTool,
+    /// Allow memory-os brain candidates to be ingested in hybrid rollout paths.
+    MemoryOsBrainCandidates,
+    /// Allow corroborated brain candidates to be promoted beyond shadow-only mode.
+    MemoryOsLimitedPromotion,
     /// Append additional AGENTS.md guidance to user instructions.
     ChildAgentsMd,
     /// Allow `detail: "original"` image outputs on supported models.
@@ -549,6 +553,18 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
+        id: Feature::MemoryOsBrainCandidates,
+        key: "memory_os_brain_candidates",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::MemoryOsLimitedPromotion,
+        key: "memory_os_limited_promotion",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
         id: Feature::ChildAgentsMd,
         key: "child_agents_md",
         stage: Stage::UnderDevelopment,
@@ -894,5 +910,24 @@ mod tests {
     fn collab_is_legacy_alias_for_multi_agent() {
         assert_eq!(feature_for_key("multi_agent"), Some(Feature::Collab));
         assert_eq!(feature_for_key("collab"), Some(Feature::Collab));
+    }
+
+    #[test]
+    fn memory_os_rollout_features_are_under_development_and_disabled_by_default() {
+        for feature in [
+            Feature::MemoryOsBrainCandidates,
+            Feature::MemoryOsLimitedPromotion,
+        ] {
+            assert_eq!(feature.stage(), Stage::UnderDevelopment);
+            assert_eq!(feature.default_enabled(), false);
+        }
+        assert_eq!(
+            feature_for_key("memory_os_brain_candidates"),
+            Some(Feature::MemoryOsBrainCandidates)
+        );
+        assert_eq!(
+            feature_for_key("memory_os_limited_promotion"),
+            Some(Feature::MemoryOsLimitedPromotion)
+        );
     }
 }

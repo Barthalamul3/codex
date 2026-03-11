@@ -112,6 +112,10 @@ async fn run_cmd_result_with_writable_roots(
 
 fn is_bwrap_unavailable_output(output: &codex_core::exec::ExecToolCallOutput) -> bool {
     output.stderr.text.contains(BWRAP_UNAVAILABLE_ERR)
+        || output
+            .stderr
+            .text
+            .contains("setting up uid map: Permission denied")
         || (output
             .stderr
             .text

@@ -917,12 +917,18 @@ async fn remote_manual_compact_emits_context_compaction_items() -> Result<()> {
     .await?;
     let codex = harness.test().codex.clone();
 
-    mount_sse_once(
+    responses::mount_sse_sequence(
         harness.server(),
-        sse(vec![
-            responses::ev_assistant_message("m1", "REMOTE_REPLY"),
-            responses::ev_completed("resp-1"),
-        ]),
+        vec![
+            sse(vec![
+                responses::ev_assistant_message("m1", "REMOTE_REPLY"),
+                responses::ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                responses::ev_assistant_message("m2", "LOCAL_COMPACT_SUMMARY"),
+                responses::ev_completed("resp-2"),
+            ]),
+        ],
     )
     .await;
 
@@ -1040,6 +1046,79 @@ async fn remote_manual_compact_failure_emits_task_error_event() -> Result<()> {
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     assert_eq!(compact_mock.requests().len(), 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remote_manual_compact_501_falls_back_to_local_compaction() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let harness = TestCodexHarness::with_builder(
+        test_codex().with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing()),
+    )
+    .await?;
+    let codex = harness.test().codex.clone();
+
+    mount_sse_once(
+        harness.server(),
+        sse(vec![
+            responses::ev_assistant_message("m1", "REMOTE_REPLY"),
+            responses::ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    let compact_mock = responses::mount_compact_response_once(
+        harness.server(),
+        ResponseTemplate::new(501)
+            .insert_header("content-type", "application/json")
+            .set_body_json(serde_json::json!({
+                "error": {
+                    "message": "Antigravity local compaction is disabled; use Codex-native compaction instead."
+                }
+            })),
+    )
+    .await;
+    let local_compact_mock = mount_sse_once(
+        harness.server(),
+        sse(vec![
+            responses::ev_assistant_message("m2", "LOCAL_FALLBACK_SUMMARY"),
+            responses::ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "manual remote compact fallback".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    codex.submit(Op::Compact).await?;
+
+    wait_for_event_match(&codex, |event| match event {
+        EventMsg::ItemCompleted(ItemCompletedEvent { item, .. }) => match item {
+            TurnItem::ContextCompaction(compaction) => Some(compaction.id.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+    .await;
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    assert_eq!(compact_mock.requests().len(), 1);
+    assert_eq!(local_compact_mock.requests().len(), 1);
+    assert_eq!(
+        local_compact_mock.single_request().path(),
+        "/v1/responses",
+        "expected fallback local compaction to use the standard responses endpoint"
+    );
 
     Ok(())
 }

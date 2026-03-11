@@ -1,0 +1,21 @@
+run_id: "2026-03-06-ccodex-memory-os"
+task_id: "ccodex-memory-os-phase-1"
+success_signals:
+  - "saved session artifacts contain canonical and episodic memory frames for ccodex"
+  - "resume path logs canonical-over-transcript precedence when stale history conflicts"
+  - "injected memory items include keep/drop explanation traces"
+failure_signals:
+  - "next-step regression to already-completed task"
+  - "pragmatic inference injected as observed fact"
+  - "semantic retrieval selected records without explanation"
+metrics:
+  latency_p95_ms: 50
+  error_rate_percent: 1
+  drift_window_minutes: 60
+alerts:
+  - name: "continuity_restart_regression"
+    trigger: "same objective repeatedly reintroduced with stale next step after resume or compaction"
+    response: "disable retrieval path, inspect canonical frame, rerun focused continuity tests"
+  - name: "pragmatic_fact_leak"
+    trigger: "inferred record appears in observed lane or canonical state"
+    response: "disable pragmatic injection and inspect extractor evidence thresholds"

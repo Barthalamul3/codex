@@ -1,0 +1,53 @@
+run_id: "20260307-174316"
+task_id: "ccodex-memory-os-06-retrieval"
+version: "1"
+assurance_mode: "standard"
+change_type: "targeted_code_change"
+runtime_impact: false
+packaging_changed: false
+in_scope:
+  files:
+    - "codex-rs/core/src/memory_os/retrieve.rs"
+    - "codex-rs/core/src/memory_os/tests.rs"
+  systems:
+    - "ccodex memory_os shadow retrieval interface"
+    - "codex-core focused retrieval test coverage"
+out_of_scope:
+  files:
+    - "codex-rs/core/src/codex.rs"
+    - "codex-rs/core/src/state/session.rs"
+    - "codex-rs/core/src/codex/rollout_reconstruction.rs"
+  systems:
+    - "authoritative canonical-memory selection"
+    - "embedding or reranker enablement"
+    - "stock codex behavior"
+forbidden_operations:
+  - "destructive_git_without_explicit_approval"
+  - "making retrieval authoritative"
+  - "changing stock codex behavior"
+  - "policy_bypass"
+escalation_conditions:
+  - "ambiguous_scope"
+  - "repeated_failure_signature"
+  - "test_failure_outside_task6_surface"
+change_budget:
+  max_files: 2
+  max_behavioral_surface: "memory_os shadow retrieval interface only"
+
+success_criteria:
+  functional:
+    - "shadow retrieval result explicitly remains advisory only"
+    - "deterministic lexical+recency+importance ranking remains intact"
+    - "explanation traces remain stable and inspectable"
+  reliability:
+    - "semantic branch stays disabled by default"
+    - "non-finite scores do not destabilize ranking"
+  security: []
+  quality:
+    lint_mode: "strict"
+    typecheck_mode: "strict"
+    coverage_threshold_percent: 85
+    require_no_failing_tests: true
+    anti_mock_policy:
+      enabled: true
+      exceptions_require_approval: false

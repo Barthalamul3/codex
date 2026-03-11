@@ -1,5 +1,26 @@
 use super::*;
 
+use crate::memory_os::AuthorityTier;
+use crate::memory_os::BrainContinuationHint;
+use crate::memory_os::BrainMemoryCandidate;
+use crate::memory_os::BrainRetrievalSuggestion;
+use crate::memory_os::BrainShadowState;
+use crate::memory_os::CandidateOrigin;
+use crate::memory_os::CanonicalLedgerEntry;
+use crate::memory_os::CanonicalStateRecord;
+use crate::memory_os::DomainEventKind;
+use crate::memory_os::EvidenceRef;
+use crate::memory_os::MemoryCandidate;
+use crate::memory_os::MemoryOsSnapshot;
+use crate::memory_os::MemoryPlane;
+use crate::memory_os::ObservationalMemoryRecord;
+use crate::memory_os::PragmaticMemoryKind;
+use crate::memory_os::PragmaticMemoryRecord;
+use crate::memory_os::PragmaticMemoryStatus;
+use crate::memory_os::PromotionDecisionRecord;
+use crate::memory_os::PromotionStatus;
+use crate::memory_os::RetrievalExplanationRecord;
+use crate::memory_os::StateTransition;
 use crate::protocol::CompactedItem;
 use crate::protocol::InitialHistory;
 use crate::protocol::ResumedHistory;
@@ -30,6 +51,182 @@ fn assistant_message(text: &str) -> ResponseItem {
         }],
         end_turn: None,
         phase: None,
+    }
+}
+
+fn message_texts(items: &[ResponseItem]) -> Vec<&str> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { content, .. } => Some(content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn developer_message_texts(items: &[ResponseItem]) -> Vec<&str> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { role, content, .. } if role == "developer" => Some(content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn non_developer_message_texts(items: &[ResponseItem]) -> Vec<&str> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { role, content, .. } if role != "developer" => Some(content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn memory_os_snapshot_fixture() -> MemoryOsSnapshot {
+    MemoryOsSnapshot {
+        canonical: CanonicalStateRecord {
+            objective: Some("continue task 4".to_string()),
+            active_subgoal: Some("assemble prompt context from memory planes".to_string()),
+            decision_ledger: vec![CanonicalLedgerEntry {
+                id: "D9".to_string(),
+                summary: "prefer canonical memory planes over stale transcript restart prose"
+                    .to_string(),
+            }],
+            attempt_ledger: vec![CanonicalLedgerEntry {
+                id: "A4".to_string(),
+                summary: "capture resume-after-compaction regressions".to_string(),
+            }],
+            outcome_ledger: vec![CanonicalLedgerEntry {
+                id: "O4".to_string(),
+                summary: "proved transcript reconstruction can restart stale work".to_string(),
+            }],
+            next_steps: vec!["continue task 5".to_string()],
+            blockers: vec!["stale transcript can still restart task 1".to_string()],
+            constraints: vec!["ccodex only".to_string()],
+            open_questions: vec!["when should transcript fallback still be injected".to_string()],
+            active_files: vec![
+                "codex-rs/core/src/codex/rollout_reconstruction.rs".to_string(),
+                "codex-rs/core/src/memory_os/assemble.rs".to_string(),
+            ],
+            continuation_cursor: Some("turn-44".to_string()),
+        },
+        observations: vec![ObservationalMemoryRecord {
+            turn_id: "turn-44".to_string(),
+            what_changed: "persisted the memory snapshot for resume".to_string(),
+            why_it_changed: Some(
+                "resume should prefer canonical memory planes over transcript prose".to_string(),
+            ),
+            artifacts_touched: vec![
+                "codex-rs/core/src/codex/rollout_reconstruction.rs".to_string(),
+            ],
+            tests_run: vec![
+                "cargo test -p codex-core reconstruct_history -- --nocapture".to_string(),
+            ],
+            state_transition: Some(StateTransition {
+                from: Some("task5-red".to_string()),
+                to: "task5-green".to_string(),
+            }),
+            confidence: 1.0,
+            evidence_refs: vec!["turn:44".to_string()],
+            accepted_metadata: None,
+        }],
+        episodics: Vec::new(),
+        pragmatics: vec![PragmaticMemoryRecord {
+            inference_id: "turn-44-prag-1".to_string(),
+            kind: PragmaticMemoryKind::ImpliedGoal,
+            statement: "keep the resumed prompt focused on finishing task 5".to_string(),
+            confidence: 0.81,
+            derived_from: vec!["user:0".to_string()],
+            revalidation_needed: true,
+            status: PragmaticMemoryStatus::Active,
+            accepted_metadata: None,
+        }],
+        retrievals: vec![RetrievalExplanationRecord {
+            memory_id: "D9".to_string(),
+            plane: MemoryPlane::Canonical,
+            score: 1.0,
+            rationale: "canonical snapshot is the durable authority on resume".to_string(),
+            source_refs: vec!["turn:44".to_string()],
+        }],
+        promotion_decisions: vec![PromotionDecisionRecord {
+            candidate_id: "turn-44-decisionrecorded-prefercanoni".to_string(),
+            plane: MemoryPlane::Observational,
+            origin: CandidateOrigin::DeterministicExtractor,
+            authority_tier: AuthorityTier::Observed,
+            status: PromotionStatus::Accepted,
+            rationale: "deterministic observational candidate backed by typed evidence"
+                .to_string(),
+            source_event_kinds: vec![DomainEventKind::DecisionRecorded],
+            evidence_refs: vec!["turn:turn-44".to_string()],
+            superseded_by: None,
+        }],
+        injection_traces: Vec::new(),
+        contradictions: Vec::new(),
+        brain_shadow: BrainShadowState {
+            memory_candidates: vec![BrainMemoryCandidate {
+                candidate: MemoryCandidate {
+                    candidate_id: "brain-cand-1".to_string(),
+                    plane: MemoryPlane::Observational,
+                    origin: CandidateOrigin::BrainRxt,
+                    authority_tier: AuthorityTier::Advisory,
+                    summary: "resume may still care about the rollout reconstruction seam"
+                        .to_string(),
+                    event_kinds: vec![],
+                    evidence_refs: vec![EvidenceRef::Turn {
+                        turn_id: "turn-44".to_string(),
+                    }],
+                    failure_class: None,
+                },
+                confidence: 0.67,
+                rationale: "shadow brain ranked the recent reconstruction seam as relevant"
+                    .to_string(),
+            }],
+            retrieval_suggestions: vec![BrainRetrievalSuggestion {
+                query: "resume reconstruction".to_string(),
+                suggested_memory_ids: vec!["D9".to_string()],
+                rationale: "canonical resume state and recent reconstruction work align"
+                    .to_string(),
+            }],
+            continuation_hint: Some(BrainContinuationHint {
+                objective: Some("continue task 4".to_string()),
+                next_step: Some("finish rollout reconstruction hardening".to_string()),
+                blockers: vec!["brain lane is still shadow-only".to_string()],
+                rationale: "shadow continuity suggests the reconstruction seam remains active"
+                    .to_string(),
+            }),
+            divergences: vec![crate::memory_os::BrainSupervisorDivergenceRecord {
+                candidate_id: "brain-cand-1".to_string(),
+                plane: MemoryPlane::Observational,
+                brain_summary: "resume may still care about the rollout reconstruction seam"
+                    .to_string(),
+                supervisor_status: PromotionStatus::Rejected,
+                supervisor_rationale:
+                    "brain-origin candidates remain shadow-only until corroborating promotion rules are implemented"
+                        .to_string(),
+                evidence_refs: vec!["turn:turn-44".to_string()],
+            }],
+        },
     }
 }
 
@@ -659,6 +856,398 @@ async fn record_initial_history_resumed_does_not_seed_reference_context_item_aft
 
     assert_eq!(session.previous_turn_settings().await, None);
     assert!(session.reference_context_item().await.is_none());
+}
+
+#[tokio::test]
+async fn reconstruct_history_strips_stale_task_state_lines_when_newer_snapshot_exists() {
+    let (session, turn_context) = make_session_and_context().await;
+    let snapshot = memory_os_snapshot_fixture();
+    let rollout_items = vec![
+        RolloutItem::Compacted(CompactedItem {
+            message: "summary only".to_string(),
+            replacement_history: Some(vec![
+                assistant_message(
+                    "Objective: restart task 1
+Decision: restart from the first task
+Next step: redo task 1",
+                ),
+                user_message(
+                    format!(
+                        "{}
+summary only",
+                        crate::compact::SUMMARY_PREFIX
+                    )
+                    .as_str(),
+                ),
+            ]),
+        }),
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: format!(
+                "memory_os_snapshot:{}",
+                serde_json::to_string(&snapshot).expect("serialize snapshot")
+            ),
+        })),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout_for_program_name(
+            &turn_context,
+            &rollout_items,
+            Some("ccodex"),
+        )
+        .await;
+
+    let texts = non_developer_message_texts(&reconstructed.history);
+
+    assert!(
+        texts
+            .iter()
+            .all(|text| !text.contains("restart task 1") && !text.contains("redo task 1")),
+        "expected stale task-state text to be stripped, got {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|text| text.contains("summary only")),
+        "expected non-task summary text to survive reconstruction, got {texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_strips_obvious_stale_restart_prose_when_newer_snapshot_exists() {
+    let (session, turn_context) = make_session_and_context().await;
+    let snapshot = memory_os_snapshot_fixture();
+    let rollout_items = vec![
+        RolloutItem::Compacted(CompactedItem {
+            message: "summary only".to_string(),
+            replacement_history: Some(vec![assistant_message(
+                "We should start over from task 1, redo step 1, and restart the implementation from scratch. Keep the verification notes.",
+            )]),
+        }),
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: format!(
+                "memory_os_snapshot:{}",
+                serde_json::to_string(&snapshot).expect("serialize snapshot")
+            ),
+        })),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout_for_program_name(
+            &turn_context,
+            &rollout_items,
+            Some("ccodex"),
+        )
+        .await;
+
+    let texts = reconstructed
+        .history
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { content, .. } => Some(content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        texts.iter().all(|text| {
+            !text.contains("start over from task 1")
+                && !text.contains("redo step 1")
+                && !text.contains("restart the implementation from scratch")
+        }),
+        "expected obvious stale restart prose to be stripped, got {texts:?}"
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("Keep the verification notes.")),
+        "expected benign summary prose to survive reconstruction, got {texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_filters_goal_and_next_step_contradiction_against_snapshot() {
+    let (session, turn_context) = make_session_and_context().await;
+    let snapshot = memory_os_snapshot_fixture();
+    let rollout_items = vec![
+        RolloutItem::Compacted(CompactedItem {
+            message: "summary only".to_string(),
+            replacement_history: Some(vec![assistant_message(
+                "Current plan: go back to task 1 tomorrow. We should redo the first step before anything else. Keep the verification notes.",
+            )]),
+        }),
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: format!(
+                "memory_os_snapshot:{}",
+                serde_json::to_string(&snapshot).expect("serialize snapshot")
+            ),
+        })),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout_for_program_name(
+            &turn_context,
+            &rollout_items,
+            Some("ccodex"),
+        )
+        .await;
+
+    let texts = reconstructed
+        .history
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { content, .. } => Some(content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        texts.iter().all(|text| {
+            !text.contains("go back to task 1") && !text.contains("redo the first step")
+        }),
+        "expected contradictory goal/next-step prose to be filtered, got {texts:?}"
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("Keep the verification notes.")),
+        "expected benign summary prose to survive reconstruction, got {texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_filters_scored_restart_regression_prose_against_snapshot() {
+    let (session, turn_context) = make_session_and_context().await;
+    let snapshot = memory_os_snapshot_fixture();
+    let rollout_items = vec![
+        RolloutItem::Compacted(CompactedItem {
+            message: "summary only".to_string(),
+            replacement_history: Some(vec![assistant_message(
+                "I think we should revisit task 1 and return to the first step before continuing. Keep the verification notes.",
+            )]),
+        }),
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: format!(
+                "memory_os_snapshot:{}",
+                serde_json::to_string(&snapshot).expect("serialize snapshot")
+            ),
+        })),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout_for_program_name(
+            &turn_context,
+            &rollout_items,
+            Some("ccodex"),
+        )
+        .await;
+
+    let texts = reconstructed
+        .history
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { content, .. } => Some(content),
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                Some(text.as_str())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        texts.iter().all(|text| {
+            !text.contains("revisit task 1") && !text.contains("return to the first step")
+        }),
+        "expected scored contradiction prose to be filtered, got {texts:?}"
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("Keep the verification notes.")),
+        "expected benign summary prose to survive reconstruction, got {texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_for_ccodex_injects_memory_plane_context_and_labels_pragmatics() {
+    let (session, turn_context) = make_session_and_context().await;
+    let mut snapshot = memory_os_snapshot_fixture();
+    snapshot.promotion_decisions = vec![];
+    let rollout_items = vec![
+        RolloutItem::Compacted(CompactedItem {
+            message: "summary only".to_string(),
+            replacement_history: Some(vec![assistant_message(
+                "Objective: restart task 1\nNext step: redo the first step before anything else.\nKeep the verification notes.",
+            )]),
+        }),
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: format!(
+                "memory_os_snapshot:{}",
+                serde_json::to_string(&snapshot).expect("serialize snapshot")
+            ),
+        })),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout_for_program_name(
+            &turn_context,
+            &rollout_items,
+            Some("ccodex"),
+        )
+        .await;
+
+    let texts = non_developer_message_texts(&reconstructed.history);
+    let developer_texts = developer_message_texts(&reconstructed.history);
+
+    assert!(
+        texts.iter().all(|text| {
+            !text.contains("restart task 1") && !text.contains("redo the first step")
+        }),
+        "expected transcript fallback to be sanitized by memory authority, got {texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("<memory_plane_context>")),
+        "expected injected memory-plane context, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("CANONICAL/1") && text.contains("GOAL|continue task 4")),
+        "expected canonical memory plane injection, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().any(|text| text.contains("OBS/1")
+            && text.contains("persisted the memory snapshot for resume")),
+        "expected observational records to be injected, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("BLK|stale transcript can still restart task 1")),
+        "expected memory authority to preserve blocker evidence distinctly from transcript fallback, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().any(|text| {
+            text.contains("PRAG/1")
+                && text.contains("PRAG|implied_goal|cf=81|status=active|keep the resumed prompt focused on finishing task 5")
+        }),
+        "expected pragmatics to remain explicitly labeled, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().all(|text| {
+            !text.contains("OBS|implied_goal")
+                && !text.contains("OBS|keep the resumed prompt focused on finishing task 5")
+        }),
+        "expected pragmatics not to be merged into observations, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().all(|text| {
+            !text.contains("shadow brain ranked the recent reconstruction seam as relevant")
+                && !text.contains("finish rollout reconstruction hardening")
+                && !text.contains("brain lane is still shadow-only")
+        }),
+        "expected brain shadow state to remain non-authoritative prompt data, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_for_ccodex_accepts_legacy_unversioned_memory_os_snapshot() {
+    let (session, turn_context) = make_session_and_context().await;
+    let mut snapshot = memory_os_snapshot_fixture();
+    snapshot.promotion_decisions = vec![];
+    let legacy_payload = serde_json::to_string(&snapshot).expect("serialize legacy snapshot");
+    let rollout_items = vec![
+        RolloutItem::Compacted(CompactedItem {
+            message: "summary only".to_string(),
+            replacement_history: Some(vec![assistant_message(
+                "Objective: restart task 1\nNext step: redo the first step before anything else.\nKeep the verification notes.",
+            )]),
+        }),
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: format!("memory_os_snapshot:{legacy_payload}"),
+        })),
+    ];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout_for_program_name(
+            &turn_context,
+            &rollout_items,
+            Some("ccodex"),
+        )
+        .await;
+
+    let texts = non_developer_message_texts(&reconstructed.history);
+    let developer_texts = developer_message_texts(&reconstructed.history);
+
+    assert!(
+        texts.iter().all(|text| {
+            !text.contains("restart task 1") && !text.contains("redo the first step")
+        }),
+        "expected transcript fallback to be sanitized by legacy snapshot authority, got {texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("<memory_plane_context>")),
+        "expected injected memory-plane context from legacy snapshot, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("CANONICAL/1") && text.contains("GOAL|continue task 4")),
+        "expected canonical memory plane injection from legacy snapshot, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_for_ccodex_uses_transcript_as_fallback_when_memory_snapshot_missing() {
+    let (session, turn_context) = make_session_and_context().await;
+    let rollout_items = vec![RolloutItem::Compacted(CompactedItem {
+        message: "summary only".to_string(),
+        replacement_history: Some(vec![assistant_message(
+            "Keep the verification notes and continue with the current implementation.",
+        )]),
+    })];
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout_for_program_name(
+            &turn_context,
+            &rollout_items,
+            Some("ccodex"),
+        )
+        .await;
+
+    let texts = message_texts(&reconstructed.history);
+    let developer_texts = developer_message_texts(&reconstructed.history);
+
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("Keep the verification notes")),
+        "expected transcript fallback text to survive when no memory snapshot exists, got {texts:?}"
+    );
+    assert!(
+        developer_texts.is_empty(),
+        "expected no memory-plane injection without durable memory planes, got {developer_texts:?}"
+    );
 }
 
 #[tokio::test]

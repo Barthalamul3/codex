@@ -1,0 +1,48 @@
+run_id: "2026-03-06-ccodex-memory-os"
+task_id: "ccodex-memory-os-phase-1"
+stages:
+  - name: "crawl"
+    objective: "Establish deterministic types, extraction, and persistence"
+    exit_criteria:
+      - "memory_os types compile and roundtrip"
+      - "extractor tests pass"
+      - "session persistence tests pass"
+    evidence_refs:
+      - "cargo test -p codex-core memory_os -- --nocapture"
+      - "cargo test -p codex-core recover_shadow_memory -- --nocapture"
+    status: "completed"
+  - name: "walk"
+    objective: "Assemble prompt context from memory planes under realistic resume paths"
+    exit_criteria:
+      - "reconstruct_history tests pass with memory-plane assembly"
+      - "pragmatic lane remains non-authoritative"
+      - "observability traces exist for keep/drop decisions"
+    evidence_refs:
+      - "cargo test -p codex-core live_shadow_memory -- --nocapture"
+      - "cargo test -p codex-core reconstruct_history -- --nocapture"
+      - "codex::tests::ccodex_memory_observability_injection_emits_keep_and_drop_reason_traces"
+    status: "completed"
+  - name: "run"
+    objective: "Validate integrated continuity and failure recovery"
+    exit_criteria:
+      - "cargo test -p codex-core passes"
+      - "failure injection scenarios for stale memory and partial persistence pass"
+      - "no open high-severity continuity findings"
+    evidence_refs:
+      - "cargo test -p codex-core"
+      - "cargo test -p codex-core recover_shadow_memory -- --nocapture"
+      - "cargo test -p codex-core reconstruct_history -- --nocapture"
+      - "cargo test -p codex-core memory_os -- --nocapture"
+      - "blocked by tests/all.rs suite::apply_patch_cli::* failures during cargo test -p codex-core"
+    status: "blocked"
+  - name: "rest"
+    objective: "Stabilize the architecture for future retrieval additions"
+    exit_criteria:
+      - "docs match behavior"
+      - "shadow retrieval remains off by default unless eval evidence says otherwise"
+      - "fallback to stock codex remains intact"
+    evidence_refs:
+      - "docs/ccodex-memory-os.md verification section updated to executable commands"
+      - "docs/specs/ccodex-memory-os/quality_gate_contract.yaml risk suite commands updated to sequential cargo test invocations"
+      - "cargo test -p codex-core live_shadow_memory -- --nocapture"
+    status: "completed"

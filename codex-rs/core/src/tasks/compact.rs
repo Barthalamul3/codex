@@ -35,7 +35,24 @@ impl SessionTask for CompactTask {
                 1,
                 &[("type", "remote")],
             );
-            crate::compact_remote::run_remote_compact_task(session.clone(), ctx).await
+            match crate::compact_remote::run_remote_compact_task(session.clone(), Arc::clone(&ctx))
+                .await
+            {
+                Err(err) if crate::compact_remote::should_fallback_to_local_compaction(&err) => {
+                    let _ = session.services.otel_manager.counter(
+                        "codex.task.compact",
+                        1,
+                        &[("type", "local_fallback")],
+                    );
+                    crate::compact::run_inline_auto_compact_task(
+                        session.clone(),
+                        ctx,
+                        crate::compact::InitialContextInjection::DoNotInject,
+                    )
+                    .await
+                }
+                other => other,
+            }
         } else {
             let _ = session.services.otel_manager.counter(
                 "codex.task.compact",

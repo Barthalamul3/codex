@@ -1,0 +1,12 @@
+run_id: "20260307-183600"
+task_id: "ccodex-memory-os-08-observability"
+required: true
+trigger_conditions:
+  - "focused observability tests fail"
+  - "INJECT/1 traces stop matching structured keep/drop expectations"
+  - "retrieval failures affect canonical prompt context"
+rollback_command: "git checkout -- codex-rs/core/src/codex.rs codex-rs/core/src/memory_os/assemble.rs codex-rs/core/src/codex_tests.rs docs/ccodex-memory-os.md"
+post_rollback_verification_command: "cd codex-rs && cargo test -p codex-core ccodex_memory_observability -- --nocapture"
+owner: "codex"
+max_restore_time_minutes: 15
+notes: "Rollback restores the pre-observability prompt assembly path for ccodex only."

@@ -1,0 +1,29 @@
+run_id: "20260307-174316"
+task_id: "ccodex-memory-os-06-retrieval"
+generated_at: "2026-03-07T17:47:52Z"
+owner: "codex"
+failure_mode_matrix:
+  - failure_id: "F-001"
+    failure_point: "retrieval interface contract"
+    trigger: "shadow retrieval returns ranked items without an explicit advisory-only marker"
+    severity: "high"
+    likelihood: "likely"
+    blast_radius: "future callers may incorrectly treat retrieval as authoritative"
+    detection_signal: "focused retrieval test expects an explicit advisory-only disposition"
+    prevention_control: "add result-level disposition enum and assert it in every retrieval test"
+    recovery_plan: "patch retrieve.rs, rerun focused suite, do not widen scope beyond memory_os retrieval"
+    owner: "codex"
+    status: "mitigated"
+notes:
+  assumptions:
+    - "Task 6 is limited to the retrieval interface, scoring, and explanation traces."
+    - "No runtime rollout or service deployment changes are required."
+  unresolved_questions:
+    - "Whether later tasks will persist retrieval dispositions in saved session traces."
+guardrail_failure_matrix:
+  - guardrail_id: "GR-001"
+    guardrail: "retrieval must stay non-authoritative"
+    guardrail_failure_mode: "retrieval results are merged into canonical authority or exposed without advisory labeling"
+    detection_signal: "API review and focused retrieval assertions fail"
+    mitigation: "keep disposition fixed to advisory-only and do not touch canonical assembly precedence"
+    owner: "codex"

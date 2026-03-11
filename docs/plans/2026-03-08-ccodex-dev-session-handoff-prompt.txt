@@ -1,0 +1,19 @@
+Read this file first and use it as the active handoff:
+
+/opt/ai/Documents/ClawdBrainVault/Projects/codex-upstream/.worktrees/per-turn-memory-architecture/docs/plans/2026-03-08-ccodex-dev-session-handoff.md
+
+Continue from that exact state.
+
+Primary goal:
+- switch the actual live `ccodex` runtime to the rebuilt worktree binary
+- run `cargo test -p codex-core live_shadow_memory -- --nocapture`
+- run `cargo test -p codex-core reconstruct_history -- --nocapture`
+- verify the live injected `memory_plane_context` no longer contains stale noise such as:
+  - `TRY|...|exec_command`
+  - `OBS|...|attempt recorded: exec_command`
+  - path-only `attempt failed:` records
+  - markdown-link `FIL|...`
+  - `EPIS|...|attempt|exec_command`
+  - `KEEP|observational` on raw tool refs
+
+Do not restart from analysis. Continue execution from the handoff.

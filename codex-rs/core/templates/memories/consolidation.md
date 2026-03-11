@@ -158,6 +158,19 @@ Rules:
   useful than `raw_memories.md` while remaining easy to navigate.
 - Ordering objective: surface the most useful and most recently-updated validated memories
   near the top of `MEMORY.md` and `memory_summary.md`.
+- Lane objective for `MEMORY.md`: keep durable facts, operating heuristics, and historical
+  observations in clearly separated lanes instead of mixing them into one undifferentiated
+  learning cluster.
+- Historical observations should stay short, explicitly dated, and never replace durable facts
+  or current operating heuristics.
+- Prompt-surface objective: `memory_summary.md` must read like a compact routing index, not a
+  rollout recap. Deduplicate exact repeated lines before writing it.
+- Lane objective for `memory_summary.md`: keep durable architecture facts and stable verification
+  heuristics prominent; demote transient rollout history and procedural ballast.
+- Do not preserve dated recap sections like `## What's in Memory` in prompt-eligible summary
+  output; keep prompt-facing memory focused on durable lanes and authority guidance.
+- Do not preserve historical scorecards or self-evaluation prose in `memory_summary.md`; keep
+  only the reusable review heuristic or remediation pattern.
 
 ============================================================
 1) `MEMORY.md` FORMAT (STRICT)
@@ -200,6 +213,12 @@ Required task-oriented body shape (strict):
 
 ### learnings
 
+- Keep `### learnings` lane-clean. If a task needs multiple memory types, separate them with
+  plain bullets prefixed by `Durable fact:`, `Operating heuristic:`, or `Historical note:`
+  rather than mixing them into interchangeable prose.
+- Use `Historical note:` only for dated observations that still help future retrieval. Keep them
+  compact, explicitly dated when relevant, and subordinate to durable facts plus current
+  heuristics.
 - <task-specific learnings>
 - <user expectation, preference, style, tone, feedback>
 - <what worked, what failed, validation, reusable procedure, etc.>

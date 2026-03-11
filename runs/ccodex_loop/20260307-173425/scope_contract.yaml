@@ -1,0 +1,61 @@
+run_id: "20260307-173425"
+task_id: "ccodex-memory-os-06-retrieval"
+version: "1"
+assurance_mode: "standard"
+change_type: "task_verification_and_closeout"
+runtime_impact: false
+packaging_changed: false
+in_scope:
+  files:
+    - "codex-rs/core/src/memory_os.rs"
+    - "codex-rs/core/src/memory_os/retrieve.rs"
+    - "codex-rs/core/src/memory_os/tests.rs"
+    - "codex-rs/core/src/memory_os/assemble.rs"
+    - "codex-rs/core/src/codex/rollout_reconstruction_tests.rs"
+    - "codex-rs/core/src/codex_tests.rs"
+  systems:
+    - "ccodex memory_os shadow retrieval interface"
+    - "deterministic scoring and explanation trace generation"
+    - "non-authoritative prompt assembly of stored retrieval traces"
+out_of_scope:
+  files:
+    - "codex-rs/core/src/codex.rs"
+    - "codex-rs/core/src/state/session.rs"
+    - "codex-rs/core/src/memory_os/consolidate.rs"
+  systems:
+    - "authoritative retrieval promotion"
+    - "embedding search or reranker enablement"
+    - "consolidation and contradiction logic from later tasks"
+forbidden_operations:
+  - "destructive_git_without_explicit_approval"
+  - "production_mutation_without_gate_pass"
+  - "policy_bypass"
+  - "making retrieval authoritative for ccodex prompt state"
+escalation_conditions:
+  - "ambiguous_scope"
+  - "security_or_privacy_risk"
+  - "repeated_failure_signature"
+  - "focused retrieval suite fails after artifact generation"
+change_budget:
+  max_files: 7
+  max_behavioral_surface: "Task 6 retrieval interface and its verification artifacts only"
+
+success_criteria:
+  functional:
+    - "shadow retrieval ranks candidates deterministically from lexical, recency, and importance inputs"
+    - "retrieval explanations record why each candidate was selected"
+    - "semantic scoring remains disabled by default even when a scorer is supplied"
+    - "stored retrieval traces remain advisory context and not authoritative state"
+  reliability:
+    - "focused retrieval suite passes"
+    - "reconstruction suite stays green with retrieval trace rendering present"
+    - "artifact validator passes for the run directory"
+  security: []
+  quality:
+    lint_mode: "strict"
+    typecheck_mode: "strict"
+    coverage_threshold_percent: 85
+    require_no_failing_tests: true
+    anti_mock_policy:
+      enabled: true
+      exceptions_require_approval: true

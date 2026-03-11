@@ -1,0 +1,1 @@
+artifact validation passed: /opt/ai/Documents/ClawdBrainVault/Projects/codex-upstream/.worktrees/per-turn-memory-architecture/runs/ccodex_loop/20260307-180009 (mode=standard)

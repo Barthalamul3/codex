@@ -1,0 +1,27 @@
+run_id: "20260307-180009"
+task_id: "ccodex-memory-os-06-retrieval"
+assurance_mode: "standard"
+coverage_rationale: "Task 6 is a deterministic retrieval contract, so focused compile and test coverage over ranking, explainability, and disabled-by-default semantics is the relevant gate."
+blocking_checks:
+  lint:
+    command: "cargo fmt --manifest-path codex-rs/Cargo.toml --all --check"
+    mode: "strict"
+  typecheck:
+    command: "cd codex-rs && cargo test -p codex-core memory_os_retrieve --no-run"
+    mode: "strict"
+  tests:
+    command: "cd codex-rs && cargo test -p codex-core memory_os_retrieve -- --nocapture"
+    require_all_pass: true
+  coverage:
+    command: "cd codex-rs && cargo test -p codex-core memory_os_retrieve -- --nocapture"
+    minimum_percent: 85
+anti_mock_policy:
+  enforce_real_path_tests: true
+  forbidden_patterns:
+    - "mocking canonical authority behavior"
+    - "mocking retrieval explanations instead of asserting real records"
+  approved_exceptions: []
+immediate_failure_policy:
+  stop_on_first_blocking_failure: true
+  rca_required_for_blocking_failure: true
+  rerun_from_clean_state_required: true

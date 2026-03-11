@@ -1,0 +1,20 @@
+memory_id: "MEM-20260307-182122-RETRIEVAL-001"
+run_id: "20260307-182122"
+context_signature: "task-6-shadow-retrieval-verification"
+decision: "Accept the existing Task 6 retrieval implementation in the worktree without additional Rust edits"
+rationale: "The current worktree already contains an advisory-only retrieval interface, deterministic lexical/recency/importance scoring, explanation traces, and a semantic scorer trait boundary that stays disabled by default."
+evidence_refs:
+  - "codex-rs/core/src/memory_os/retrieve.rs"
+  - "codex-rs/core/src/memory_os/tests.rs"
+  - "cargo test -p codex-core memory_os_retrieve -- --nocapture"
+  - "cargo test -p codex-core memory_os -- --nocapture"
+failure_signatures:
+  - "authoritative-retrieval-drift"
+  - "semantic-default-enable"
+  - "non-deterministic-ranking"
+mitigations:
+  - "ShadowRetrievalDisposition::AdvisoryOnly"
+  - "enable_semantic_scoring defaults to false"
+  - "stable score normalization and tie-break ordering"
+confidence: 0.96
+created_at: "2026-03-07T10:25:18-08:00"

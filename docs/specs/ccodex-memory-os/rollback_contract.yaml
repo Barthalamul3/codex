@@ -1,0 +1,12 @@
+run_id: "2026-03-06-ccodex-memory-os"
+task_id: "ccodex-memory-os-phase-1"
+required: true
+trigger_conditions:
+  - "resume-after-compaction regression reappears"
+  - "pragmatic lane pollutes canonical state"
+  - "targeted codex-core continuity tests fail after integration"
+rollback_command: "git checkout -- codex-rs/core/src/codex.rs codex-rs/core/src/codex/rollout_reconstruction.rs codex-rs/core/src/state/session.rs codex-rs/core/src/turn_memory.rs codex-rs/core/src/lib.rs codex-rs/core/src/codex_tests.rs codex-rs/core/src/codex/rollout_reconstruction_tests.rs"
+post_rollback_verification_command: "cargo test -p codex-core live_shadow_memory reconstruct_history -- --nocapture"
+owner: "implementation"
+max_restore_time_minutes: 15
+notes: "If the new module tree has been added, remove it from lib.rs and re-run focused continuity tests before proceeding."

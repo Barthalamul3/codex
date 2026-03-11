@@ -1,0 +1,31 @@
+run_id: "20260307-181031"
+task_id: "ccodex-memory-os-06-retrieval"
+generated_at: "2026-03-07T18:10:31-08:00"
+owner: "codex"
+failure_mode_matrix:
+  - failure_id: "F-001"
+    failure_point: "retrieval explanation trace assembly"
+    trigger: "source refs preserve duplicate or unstable upstream ordering"
+    severity: "high"
+    likelihood: "likely"
+    blast_radius: "shadow retrieval observability becomes nondeterministic and hard to diff"
+    detection_signal: "focused retrieval test fails on source_refs ordering"
+    prevention_control: "normalize source refs at ranked candidate creation and assert exact trace output"
+    recovery_plan: "restore deterministic sorting and rerun focused retrieval suite"
+    owner: "codex"
+    status: "closed"
+
+notes:
+  assumptions:
+    - "Task 6 remains shadow-mode only and does not change authoritative prompt assembly."
+    - "The worktree already contains prior Task 6 scaffolding that this run validates and tightens."
+  unresolved_questions:
+    - "None for this narrow fix."
+
+guardrail_failure_matrix:
+  - guardrail_id: "GR-001"
+    guardrail: "retrieval must remain advisory only"
+    guardrail_failure_mode: "new scoring path starts mutating canonical state or prompt authority ordering"
+    detection_signal: "tests stop returning AdvisoryOnly disposition or other files outside retrieval scope require edits"
+    mitigation: "limit the change to retrieval explanation normalization and leave disposition unchanged"
+    owner: "codex"

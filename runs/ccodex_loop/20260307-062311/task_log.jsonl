@@ -1,0 +1,18 @@
+{"task_id": "ccodex-memory-os-01-freeze-baseline", "status": "running", "started_at": "2026-03-07T06:23:11.332396+00:00"}
+{"task_id": "ccodex-memory-os-01-freeze-baseline", "status": "harness_failed", "finished_at": "2026-03-07T06:23:16.106796+00:00", "error": ""}
+{"task_id": "ccodex-memory-os-02-memory-types", "status": "running", "started_at": "2026-03-07T06:23:16.107121+00:00"}
+{"task_id": "ccodex-memory-os-02-memory-types", "status": "harness_failed", "finished_at": "2026-03-07T06:23:20.859147+00:00", "error": ""}
+{"task_id": "ccodex-memory-os-03-extractors", "status": "running", "started_at": "2026-03-07T06:23:20.859467+00:00"}
+{"task_id": "ccodex-memory-os-03-extractors", "status": "harness_failed", "finished_at": "2026-03-07T06:23:25.615380+00:00", "error": ""}
+{"task_id": "ccodex-memory-os-04-session-snapshot", "status": "running", "started_at": "2026-03-07T06:23:25.615687+00:00"}
+{"task_id": "ccodex-memory-os-04-session-snapshot", "status": "harness_failed", "finished_at": "2026-03-07T06:23:30.380552+00:00", "error": ""}
+{"task_id": "ccodex-memory-os-05-assembly", "status": "running", "started_at": "2026-03-07T06:23:30.380862+00:00"}
+{"task_id": "ccodex-memory-os-05-assembly", "status": "harness_failed", "finished_at": "2026-03-07T06:23:35.202990+00:00", "error": ""}
+{"task_id": "ccodex-memory-os-06-retrieval", "status": "running", "started_at": "2026-03-07T06:23:35.203297+00:00"}
+{"task_id": "ccodex-memory-os-06-retrieval", "status": "harness_failed", "finished_at": "2026-03-07T06:23:39.951330+00:00", "error": ""}
+{"task_id": "ccodex-memory-os-07-consolidation", "status": "running", "started_at": "2026-03-07T06:23:39.951748+00:00"}
+{"task_id": "ccodex-memory-os-07-consolidation", "status": "harness_failed", "finished_at": "2026-03-07T06:23:44.970774+00:00", "error": ""}
+{"task_id": "ccodex-memory-os-08-observability", "status": "running", "started_at": "2026-03-07T06:23:44.971616+00:00"}
+{"task_id": "ccodex-memory-os-08-observability", "status": "harness_failed", "finished_at": "2026-03-07T06:23:49.773723+00:00", "error": ""}
+{"task_id": "ccodex-memory-os-09-validation", "status": "running", "started_at": "2026-03-07T06:23:49.774155+00:00"}
+{"task_id": "ccodex-memory-os-09-validation", "status": "harness_failed", "finished_at": "2026-03-07T06:23:54.571978+00:00", "error": ""}

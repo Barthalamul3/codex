@@ -21,6 +21,25 @@ In the codex-rs folder where the rust code lives:
   locally before CI.
 - Do not create small helper methods that are referenced only once.
 
+
+## `ccodex` Memory OS Continuation Contract
+
+For work on the `ccodex` continuity/memory architecture, treat these files as the active execution contract:
+- `docs/plans/2026-03-06-ccodex-memory-os.md`
+- `docs/ccodex-memory-os.md`
+- `docs/specs/ccodex-memory-os/scope_contract.yaml`
+- `docs/specs/ccodex-memory-os/quality_gate_contract.yaml`
+- `docs/specs/ccodex-memory-os/stage_plan.yaml`
+- `docs/ccodex-loop.md`
+- `scripts/seed_ccodex_memory_os_tasks.py`
+- `scripts/run_ccodex_loop.py`
+- `scripts/run_ccodex_harness.py`
+- `scripts/run_ccodex_loop_tmux.sh`
+- `scripts/run_ccodex_watchdog.sh`
+- `tasks/ccodex_memory_os/queue.jsonl`
+
+If a future session resumes this track, continue implementing the plan until all in-scope tasks are done and the documented gates pass. Do not claim completion for this track unless the plan's Done Definition is satisfied with real command/test evidence.
+
 Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
 
 1. Run the test for the specific project that was changed. For example, if changes were made in `codex-rs/tui`, run `cargo test -p codex-tui`.

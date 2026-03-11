@@ -1,0 +1,21 @@
+run_id: "20260307-183600"
+task_id: "ccodex-memory-os-08-observability"
+success_signals:
+  - "injected memory items include keep/drop explanation traces"
+  - "invalid retrieval explanations are dropped without losing canonical prompt context"
+  - "ccodex-only counters exist for keep, drop, and retrieval failure totals"
+failure_signals:
+  - "prompt injection includes unexplained record selection"
+  - "non-finite retrieval explanations appear in prompt context"
+  - "canonical state changes because of observability instrumentation"
+metrics:
+  latency_p95_ms: 50
+  error_rate_percent: 1
+  drift_window_minutes: 60
+alerts:
+  - name: "missing_injection_explanation_trace"
+    trigger: "INJECT/1 no longer shows both decision and rationale for selected or dropped records"
+    response: "inspect codex.rs snapshot instrumentation and rerun focused observability tests"
+  - name: "retrieval_failure_prompt_leak"
+    trigger: "invalid retrieval trace appears in prompt context or canonical context disappears"
+    response: "disable retrieval trace injection and inspect ccodex prompt instrumentation"

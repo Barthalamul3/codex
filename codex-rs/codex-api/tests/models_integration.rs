@@ -1,3 +1,5 @@
+use std::env;
+
 use codex_api::AuthProvider;
 use codex_api::ModelsClient;
 use codex_api::provider::Provider;
@@ -48,6 +50,11 @@ fn provider(base_url: &str) -> Provider {
 
 #[tokio::test]
 async fn models_client_hits_models_endpoint() {
+    if env::var("CODEX_SANDBOX_NETWORK_DISABLED").is_ok() {
+        println!("Skipping test because network is disabled in a Codex sandbox.");
+        return;
+    }
+
     let server = MockServer::start().await;
     let base_url = format!("{}/api/codex", server.uri());
 

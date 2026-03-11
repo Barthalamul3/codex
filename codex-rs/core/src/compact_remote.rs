@@ -18,7 +18,6 @@ use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ResponseItem;
-use futures::TryFutureExt;
 use tracing::error;
 use tracing::info;
 
@@ -53,6 +52,9 @@ async fn run_remote_compact_task_inner(
     if let Err(err) =
         run_remote_compact_task_inner_impl(sess, turn_context, initial_context_injection).await
     {
+        if should_fallback_to_local_compaction(&err) {
+            return Err(err);
+        }
         let event = EventMsg::Error(
             err.to_error_event(Some("Error running remote compact task".to_string())),
         );
@@ -101,7 +103,7 @@ async fn run_remote_compact_task_inner_impl(
         output_schema: None,
     };
 
-    let mut new_history = sess
+    let mut new_history = match sess
         .services
         .model_client
         .compact_conversation_history(
@@ -109,7 +111,10 @@ async fn run_remote_compact_task_inner_impl(
             &turn_context.model_info,
             &turn_context.otel_manager,
         )
-        .or_else(|err| async {
+        .await
+    {
+        Ok(history) => history,
+        Err(err) => {
             let total_usage_breakdown = sess.get_total_token_usage_breakdown().await;
             let compact_request_log_data =
                 build_compact_request_log_data(&prompt.input, &prompt.base_instructions.text);
@@ -119,9 +124,9 @@ async fn run_remote_compact_task_inner_impl(
                 total_usage_breakdown,
                 &err,
             );
-            Err(err)
-        })
-        .await?;
+            return Err(err);
+        }
+    };
     new_history = process_compacted_history(
         sess.as_ref(),
         turn_context.as_ref(),
@@ -148,6 +153,16 @@ async fn run_remote_compact_task_inner_impl(
     sess.emit_turn_item_completed(turn_context, compaction_item)
         .await;
     Ok(())
+}
+
+pub(crate) fn should_fallback_to_local_compaction(err: &CodexErr) -> bool {
+    matches!(
+        err,
+        CodexErr::UnexpectedStatus(unexpected)
+            if unexpected.status == reqwest::StatusCode::NOT_IMPLEMENTED
+                && (unexpected.body.contains("use Codex-native compaction")
+                    || unexpected.body.contains("local compaction is disabled"))
+    )
 }
 
 pub(crate) async fn process_compacted_history(

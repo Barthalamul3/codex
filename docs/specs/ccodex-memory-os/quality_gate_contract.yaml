@@ -1,0 +1,31 @@
+run_id: "2026-03-06-ccodex-memory-os"
+task_id: "ccodex-memory-os-phase-1"
+assurance_mode: "high_assurance"
+coverage_rationale: "Continuity regressions are subtle and expensive, so the core crate needs focused deterministic coverage over extraction, persistence, recovery, and assembly."
+blocking_checks:
+  lint:
+    command: "cd codex-rs && just fix -p codex-core"
+    mode: "strict"
+  typecheck:
+    command: "cargo test -p codex-core --no-run"
+    mode: "strict"
+  tests:
+    command: "cargo test -p codex-core"
+    require_all_pass: true
+  risk_suites:
+    command: |
+      cargo test -p codex-core live_shadow_memory -- --nocapture
+      cargo test -p codex-core recover_shadow_memory -- --nocapture
+      cargo test -p codex-core reconstruct_history -- --nocapture
+      cargo test -p codex-core memory_os -- --nocapture
+    require_all_pass: true
+anti_mock_policy:
+  enforce_real_path_tests: true
+  forbidden_patterns:
+    - "test doubles for continuity authority logic"
+    - "mocking persistence boundaries without approved exception"
+  approved_exceptions: []
+immediate_failure_policy:
+  stop_on_first_blocking_failure: true
+  rca_required_for_blocking_failure: true
+  rerun_from_clean_state_required: true

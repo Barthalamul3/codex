@@ -1,0 +1,1 @@
+artifact validation passed: runs/ccodex_loop/20260307-183600 (mode=standard)

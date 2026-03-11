@@ -1,0 +1,45 @@
+run_id: "20260307-174316"
+task_id: "ccodex-memory-os-06-retrieval"
+stages:
+  - name: "crawl"
+    objective: "Minimal isolated correctness"
+    exit_criteria:
+      - "focused retrieval tests encode the advisory-only interface"
+      - "scoring and explanation traces remain deterministic"
+      - "scope remains limited to Task 6 files"
+    evidence_refs:
+      - "codex-rs/core/src/memory_os/tests.rs"
+      - "codex-rs/core/src/memory_os/retrieve.rs"
+    status: "passed"
+
+  - name: "walk"
+    objective: "Composed behavior under moderate perturbation"
+    exit_criteria:
+      - "focused retrieval suite passes cleanly"
+      - "semantic branch remains disabled by default"
+      - "non-finite score sanitization remains covered"
+    evidence_refs:
+      - "runs/ccodex_loop/20260307-174316/memory_os_retrieve.log"
+      - "runs/ccodex_loop/20260307-174316/memory_os_retrieve.exit"
+    status: "passed"
+
+  - name: "run"
+    objective: "Integrated reliability under stress"
+    exit_criteria:
+      - "formatting pass succeeds"
+      - "no new retrieval regressions are introduced by the API change"
+      - "artifact validator passes"
+    evidence_refs:
+      - "runs/ccodex_loop/20260307-174316/just_fmt.log"
+      - "runs/ccodex_loop/20260307-174316/just_fmt.exit"
+    status: "passed"
+
+  - name: "rest"
+    objective: "Stabilized operation after stress with low drift and no override debt"
+    exit_criteria:
+      - "drift review is clean"
+      - "no runtime rollback artifact is required"
+      - "task report captures evidence and remaining scope"
+    evidence_refs:
+      - "runs/ccodex_loop/20260307-174316/task_ccodex-memory-os-06-retrieval.md"
+    status: "passed"

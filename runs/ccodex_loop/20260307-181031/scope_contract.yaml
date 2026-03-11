@@ -1,0 +1,54 @@
+run_id: "20260307-181031"
+task_id: "ccodex-memory-os-06-retrieval"
+version: "1"
+assurance_mode: "lite"
+change_type: "behavior_fix"
+runtime_impact: false
+packaging_changed: false
+in_scope:
+  files:
+    - "codex-rs/core/src/memory_os/retrieve.rs"
+    - "codex-rs/core/src/memory_os/tests.rs"
+    - "runs/ccodex_loop/20260307-181031/task_ccodex-memory-os-06-retrieval.md"
+  systems:
+    - "ccodex memory_os shadow retrieval scoring"
+    - "retrieval explanation trace determinism"
+out_of_scope:
+  files:
+    - "codex-rs/core/src/codex.rs"
+    - "codex-rs/core/src/state/session.rs"
+    - "codex-rs/core/src/codex/rollout_reconstruction.rs"
+  systems:
+    - "authoritative continuity state ordering"
+    - "semantic retrieval rollout"
+    - "stock codex behavior"
+forbidden_operations:
+  - "destructive_git_without_explicit_approval"
+  - "production_mutation_without_gate_pass"
+  - "policy_bypass"
+escalation_conditions:
+  - "ambiguous_scope"
+  - "security_or_privacy_risk"
+  - "repeated_failure_signature"
+change_budget:
+  max_files: 6
+  max_behavioral_surface: "shadow retrieval trace ordering only"
+
+success_criteria:
+  functional:
+    - "shadow retrieval stays advisory only"
+    - "retrieval explanation traces are deterministic for identical logical inputs"
+    - "semantic scoring remains disabled by default"
+  reliability:
+    - "focused retrieval tests fail before the fix and pass after the fix"
+    - "formatter runs cleanly after the Rust edit"
+  security:
+    - "no new network, auth, or sandbox behavior is introduced"
+  quality:
+    lint_mode: "strict"
+    typecheck_mode: "strict"
+    coverage_threshold_percent: 85
+    require_no_failing_tests: true
+    anti_mock_policy:
+      enabled: true
+      exceptions_require_approval: true

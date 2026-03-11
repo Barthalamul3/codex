@@ -1,0 +1,39 @@
+{
+  "run_id": "20260307-062330",
+  "status": "fail",
+  "results": [
+    {
+      "name": "format_check",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo fmt --all --check"
+      ],
+      "exit_code": 1,
+      "stdout_log": "runs/harness/20260307-062330/logs/format_check.stdout.log",
+      "stderr_log": "runs/harness/20260307-062330/logs/format_check.stderr.log"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo test -p codex-core --no-run"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-062330/logs/typecheck.stdout.log",
+      "stderr_log": "runs/harness/20260307-062330/logs/typecheck.stderr.log"
+    },
+    {
+      "name": "tests",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo test -p codex-core live_shadow_memory -- --nocapture && cargo test -p codex-core reconstruct_history -- --nocapture && cargo test -p codex-core memory_os -- --nocapture"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-062330/logs/tests.stdout.log",
+      "stderr_log": "runs/harness/20260307-062330/logs/tests.stderr.log"
+    }
+  ]
+}

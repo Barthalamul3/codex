@@ -1,3 +1,4 @@
+use crate::protocol::BackgroundEventEvent;
 use crate::protocol::EventMsg;
 use crate::protocol::RolloutItem;
 use codex_protocol::models::ResponseItem;
@@ -88,6 +89,12 @@ fn should_persist_event_msg_extended(ev: &EventMsg) -> bool {
 /// Returns the minimum persistence mode that includes this event.
 /// `None` means the event should never be persisted.
 fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
+    if let EventMsg::BackgroundEvent(BackgroundEventEvent { message }) = ev
+        && should_persist_memory_background_event(message)
+    {
+        return Some(EventPersistenceMode::Limited);
+    }
+
     match ev {
         EventMsg::UserMessage(_)
         | EventMsg::AgentMessage(_)
@@ -175,5 +182,35 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::CollabCloseBegin(_)
         | EventMsg::CollabResumeBegin(_)
         | EventMsg::ImageGenerationBegin(_) => None,
+    }
+}
+
+fn should_persist_memory_background_event(message: &str) -> bool {
+    message.starts_with("memory_os_snapshot:")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limited_mode_persists_memory_snapshot_background_events() {
+        let unrelated = RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: "turn_hotset_shadow:HOT/1
+NXT|continue"
+                .to_string(),
+        }));
+        let snapshot = RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: "memory_os_snapshot:{\"canonical\":{\"objective\":\"verify continuity\",\"active_subgoal\":null,\"decision_ledger\":[],\"attempt_ledger\":[],\"outcome_ledger\":[],\"next_steps\":[],\"blockers\":[],\"constraints\":[],\"open_questions\":[],\"active_files\":[],\"continuation_cursor\":null},\"observations\":[],\"episodics\":[],\"pragmatics\":[],\"retrievals\":[]}".to_string(),
+        }));
+
+        assert!(is_persisted_response_item(
+            &snapshot,
+            EventPersistenceMode::Limited
+        ));
+        assert!(!is_persisted_response_item(
+            &unrelated,
+            EventPersistenceMode::Limited
+        ));
     }
 }

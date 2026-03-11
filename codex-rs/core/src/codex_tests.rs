@@ -19,6 +19,28 @@ use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::FunctionCallOutputPayload;
 use tracing::Span;
 
+use crate::memory_os::AuthorityTier;
+use crate::memory_os::BrainContinuationHint;
+use crate::memory_os::BrainMemoryCandidate;
+use crate::memory_os::BrainRetrievalSuggestion;
+use crate::memory_os::BrainShadowState;
+use crate::memory_os::CandidateOrigin;
+use crate::memory_os::CanonicalLedgerEntry;
+use crate::memory_os::CanonicalStateRecord;
+use crate::memory_os::ContradictionKind;
+use crate::memory_os::ContradictionRecord;
+use crate::memory_os::EpisodicMemoryKind;
+use crate::memory_os::EpisodicMemoryRecord;
+use crate::memory_os::EvidenceRef;
+use crate::memory_os::FailureClass;
+use crate::memory_os::MemoryCandidate;
+use crate::memory_os::MemoryOsSnapshot;
+use crate::memory_os::ObservationalMemoryRecord;
+use crate::memory_os::PromotionDecisionRecord;
+use crate::memory_os::PromotionStatus;
+use crate::memory_os::RetrievalExplanationRecord;
+use crate::memory_os::StateTransition;
+use crate::memory_os::TurnRange;
 use crate::protocol::CompactedItem;
 use crate::protocol::CreditsSnapshot;
 use crate::protocol::InitialHistory;
@@ -134,6 +156,688 @@ fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
             _ => None,
         })
         .collect()
+}
+
+fn memory_os_snapshot_fixture() -> MemoryOsSnapshot {
+    MemoryOsSnapshot {
+        canonical: CanonicalStateRecord {
+            objective: Some("continue task 4".to_string()),
+            active_subgoal: Some("assemble prompt context from memory planes".to_string()),
+            decision_ledger: vec![CanonicalLedgerEntry {
+                id: "D9".to_string(),
+                summary: "prefer canonical memory planes over stale transcript restart prose"
+                    .to_string(),
+            }],
+            attempt_ledger: vec![CanonicalLedgerEntry {
+                id: "A4".to_string(),
+                summary: "capture resume-after-compaction regressions".to_string(),
+            }],
+            outcome_ledger: vec![CanonicalLedgerEntry {
+                id: "O4".to_string(),
+                summary: "proved transcript reconstruction can restart stale work".to_string(),
+            }],
+            next_steps: vec!["continue task 4".to_string()],
+            blockers: vec!["stale transcript can still restart task 1".to_string()],
+            constraints: vec!["ccodex only".to_string()],
+            open_questions: vec!["when should transcript fallback still be injected".to_string()],
+            active_files: vec![
+                "codex-rs/core/src/codex.rs".to_string(),
+                "codex-rs/core/src/memory_os/assemble.rs".to_string(),
+            ],
+            continuation_cursor: Some("turn-44".to_string()),
+        },
+        observations: vec![ObservationalMemoryRecord {
+            turn_id: "turn-44".to_string(),
+            what_changed: "persisted the memory snapshot for resume".to_string(),
+            why_it_changed: Some(
+                "resume should prefer canonical memory planes over transcript prose".to_string(),
+            ),
+            artifacts_touched: vec![
+                "codex-rs/core/src/codex.rs".to_string(),
+                "codex-rs/core/src/memory_os/assemble.rs".to_string(),
+            ],
+            tests_run: vec![
+                "cargo test -p codex-core reconstruct_history -- --nocapture".to_string(),
+            ],
+            state_transition: Some(StateTransition {
+                from: Some("task5-red".to_string()),
+                to: "task5-green".to_string(),
+            }),
+            confidence: 1.0,
+            evidence_refs: vec!["turn:44".to_string()],
+            accepted_metadata: None,
+        }],
+        episodics: Vec::new(),
+        pragmatics: Vec::new(),
+        retrievals: vec![RetrievalExplanationRecord {
+            memory_id: "D9".to_string(),
+            plane: crate::memory_os::MemoryPlane::Canonical,
+            score: 1.0,
+            rationale: "canonical snapshot is the durable authority on resume".to_string(),
+            source_refs: vec!["turn:44".to_string()],
+        }],
+        promotion_decisions: vec![PromotionDecisionRecord {
+            candidate_id: "turn-44-decisionrecorded-prefercanoni".to_string(),
+            plane: crate::memory_os::MemoryPlane::Observational,
+            origin: CandidateOrigin::DeterministicExtractor,
+            authority_tier: AuthorityTier::Observed,
+            status: PromotionStatus::Accepted,
+            rationale: "deterministic observational candidate backed by typed evidence"
+                .to_string(),
+            source_event_kinds: vec![crate::memory_os::DomainEventKind::DecisionRecorded],
+            evidence_refs: vec!["turn:turn-44".to_string()],
+            superseded_by: None,
+        }],
+        injection_traces: Vec::new(),
+        contradictions: Vec::new(),
+        brain_shadow: BrainShadowState {
+            memory_candidates: vec![BrainMemoryCandidate {
+                candidate: MemoryCandidate {
+                    candidate_id: "brain-cand-1".to_string(),
+                    plane: crate::memory_os::MemoryPlane::Observational,
+                    origin: CandidateOrigin::BrainRxt,
+                    authority_tier: AuthorityTier::Advisory,
+                    summary: "resume may still care about the rollout reconstruction seam"
+                        .to_string(),
+                    event_kinds: vec![],
+                    evidence_refs: vec![EvidenceRef::Turn {
+                        turn_id: "turn-44".to_string(),
+                    }],
+                    failure_class: None,
+                },
+                confidence: 0.67,
+                rationale: "shadow brain ranked the recent reconstruction seam as relevant"
+                    .to_string(),
+            }],
+            retrieval_suggestions: vec![BrainRetrievalSuggestion {
+                query: "resume reconstruction".to_string(),
+                suggested_memory_ids: vec!["D9".to_string()],
+                rationale: "canonical resume state and recent reconstruction work align"
+                    .to_string(),
+            }],
+            continuation_hint: Some(BrainContinuationHint {
+                objective: Some("continue task 4".to_string()),
+                next_step: Some("finish rollout reconstruction hardening".to_string()),
+                blockers: vec!["brain lane is still shadow-only".to_string()],
+                rationale: "shadow continuity suggests the reconstruction seam remains active"
+                    .to_string(),
+            }),
+            divergences: vec![crate::memory_os::BrainSupervisorDivergenceRecord {
+                candidate_id: "brain-cand-1".to_string(),
+                plane: crate::memory_os::MemoryPlane::Observational,
+                brain_summary: "resume may still care about the rollout reconstruction seam"
+                    .to_string(),
+                supervisor_status: PromotionStatus::Rejected,
+                supervisor_rationale:
+                    "brain-origin candidates remain shadow-only until corroborating promotion rules are implemented"
+                        .to_string(),
+                evidence_refs: vec!["turn:turn-44".to_string()],
+            }],
+        },
+    }
+}
+
+#[test]
+fn prompt_input_with_live_shadow_memory_bootstraps_compact_working_set_for_ccodex() {
+    let input = vec![user_message("continue implementation in core/src/codex.rs")];
+    let shadow_pack = ShadowTurnMemoryPack {
+        stable_ledger_text: "CTX/1
+OBJ|ship advanced memory frame
+DEC|d1|ccodex only live memory injection
+WHY|d1|keep stock codex available as fallback
+CON|keep memory compact and deterministic"
+            .to_string(),
+        hot_working_set_text: "HOT/1
+NXT|implement COG/1 extraction in core/src/codex.rs
+BLK|memory injection needs to be advanced not basic
+ART|core/src/codex.rs"
+            .to_string(),
+        recall_annex_text: "RCL/1
+FAIL|f1|basic memory injection was too shallow for continuity"
+            .to_string(),
+    };
+
+    let augmented = prompt_input_with_live_shadow_memory_for_program_name(
+        &input,
+        &shadow_pack,
+        None,
+        Some("turn-1"),
+        Some("ccodex"),
+    );
+
+    assert_eq!(augmented.len(), input.len() + 1);
+    let developer_texts = developer_input_texts(&augmented);
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("<memory_plane_context>")),
+        "expected bootstrap memory-plane wrapper, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("CANONICAL/1") && text.contains("CUR|turn-1")),
+        "expected minimal bootstrap cursor context, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().any(|text| {
+            text.contains("WRK/1")
+                && text.contains("NXT|implement COG/1 extraction in core/src/codex.rs")
+                && text.contains("BLK|memory injection needs to be advanced not basic")
+                && text.contains("ART|core/src/codex.rs")
+        }),
+        "expected compact working-set bootstrap context, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().all(|text| {
+            !text.contains("OBJ|ship advanced memory frame")
+                && !text.contains("DEC|d1|ccodex only live memory injection")
+                && !text.contains("WHY|d1|keep stock codex available as fallback")
+                && !text.contains("FAIL|f1|basic memory injection was too shallow for continuity")
+        }),
+        "expected only compact working-set shadow memory during bootstrap, got {developer_texts:?}"
+    );
+}
+
+#[test]
+fn prompt_input_with_live_shadow_memory_prefers_memory_plane_context_for_ccodex() {
+    let input = vec![user_message("continue implementation in core/src/codex.rs")];
+    let shadow_pack = ShadowTurnMemoryPack {
+        stable_ledger_text: "CTX/1
+OBJ|stale transcript-derived goal
+DEC|d1|restart from transcript summary"
+            .to_string(),
+        hot_working_set_text: "HOT/1
+NXT|redo task 1 from transcript"
+            .to_string(),
+        recall_annex_text: String::new(),
+    };
+    let snapshot = memory_os_snapshot_fixture();
+
+    let augmented = prompt_input_with_live_shadow_memory_for_program_name(
+        &input,
+        &shadow_pack,
+        Some(&snapshot),
+        Some("turn-44"),
+        Some("ccodex"),
+    );
+
+    assert_eq!(augmented.len(), input.len() + 1);
+    let developer_texts = developer_input_texts(&augmented);
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("<memory_plane_context>")),
+        "expected memory-plane wrapper, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .all(|text| !text.contains("<session_memory>")),
+        "expected transcript-derived session memory to be skipped when snapshot exists, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("CANONICAL/1") && text.contains("GOAL|continue task 4")),
+        "expected canonical memory authority, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().all(|text| {
+            !text.contains("stale transcript-derived goal")
+                && !text.contains("restart from transcript summary")
+                && !text.contains("redo task 1 from transcript")
+        }),
+        "expected stale shadow transcript text not to appear when snapshot exists, got {developer_texts:?}"
+    );
+}
+
+#[test]
+fn prompt_input_with_live_shadow_memory_includes_episodic_and_contradiction_sections() {
+    let input = vec![user_message("continue implementation in core/src/codex.rs")];
+    let shadow_pack = ShadowTurnMemoryPack::default();
+    let mut snapshot = memory_os_snapshot_fixture();
+    snapshot.episodics = vec![EpisodicMemoryRecord {
+        event_id: "evt-44".to_string(),
+        kind: EpisodicMemoryKind::Failure,
+        summary: "resume-after-compaction regressed to stale transcript state".to_string(),
+        details: Some(
+            "transcript fallback restarted task 1 instead of continuing task 4".to_string(),
+        ),
+        failure_class: Some(FailureClass::RuntimeFailure),
+        caused_by: vec!["task-4".to_string()],
+        supersedes: vec![],
+        evidence_refs: vec!["turn:44".to_string()],
+        turn_range: TurnRange {
+            start: "turn-44".to_string(),
+            end: Some("turn-44".to_string()),
+        },
+        importance_score: 0.94,
+        accepted_metadata: None,
+    }];
+    snapshot.contradictions = vec![ContradictionRecord {
+        contradiction_id: "ctr-44".to_string(),
+        kind: ContradictionKind::NextStepRegression,
+        canonical_ref: "canonical.next_steps[0]".to_string(),
+        canonical_value: "continue task 4".to_string(),
+        conflicting_value: "restart task 1".to_string(),
+        rationale: "transcript fallback contradicted the canonical continuation state".to_string(),
+        source_refs: vec!["compaction:summary".to_string()],
+    }];
+
+    let augmented = prompt_input_with_live_shadow_memory_for_program_name(
+        &input,
+        &shadow_pack,
+        Some(&snapshot),
+        Some("turn-44"),
+        Some("ccodex"),
+    );
+
+    let developer_texts = developer_input_texts(&augmented);
+    assert!(
+        developer_texts.iter().any(|text| {
+            text.contains("EPIS/1")
+                && text.contains("EPIS|evt-44|failure|resume-after-compaction regressed to stale transcript state")
+                && text.contains("DET|transcript fallback restarted task 1 instead of continuing task 4")
+        }),
+        "expected episodic section from memory planes, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().any(|text| {
+            text.contains("CONTRA/1")
+                && text.contains("CONTRA|ctr-44|next_step_regression|canonical.next_steps[0]")
+                && text.contains("CANON|continue task 4")
+                && text.contains("CONF|restart task 1")
+        }),
+        "expected contradiction section from memory planes, got {developer_texts:?}"
+    );
+}
+
+#[test]
+fn ccodex_memory_observability_injection_emits_keep_and_drop_reason_traces() {
+    let input = vec![user_message("continue implementation in core/src/codex.rs")];
+    let shadow_pack = ShadowTurnMemoryPack::default();
+    let mut snapshot = memory_os_snapshot_fixture();
+    snapshot.observations.extend([
+        ObservationalMemoryRecord {
+            turn_id: "turn-45".to_string(),
+            what_changed: "added retrieval traces to the prompt".to_string(),
+            why_it_changed: Some("task 8 requires explicit keep and drop reasons".to_string()),
+            artifacts_touched: vec!["codex-rs/core/src/codex.rs".to_string()],
+            tests_run: vec![],
+            state_transition: None,
+            confidence: 0.93,
+            evidence_refs: vec!["turn:45".to_string()],
+            accepted_metadata: None,
+        },
+        ObservationalMemoryRecord {
+            turn_id: "turn-46".to_string(),
+            what_changed: "persisted observability traces for saved-session inspection".to_string(),
+            why_it_changed: Some("traceability should survive resume".to_string()),
+            artifacts_touched: vec!["codex-rs/core/src/codex.rs".to_string()],
+            tests_run: vec![],
+            state_transition: None,
+            confidence: 0.92,
+            evidence_refs: vec!["turn:46".to_string()],
+            accepted_metadata: None,
+        },
+        ObservationalMemoryRecord {
+            turn_id: "turn-47".to_string(),
+            what_changed: "guarded retrieval fallback against invalid traces".to_string(),
+            why_it_changed: Some("canonical state must stay authoritative".to_string()),
+            artifacts_touched: vec!["codex-rs/core/src/codex.rs".to_string()],
+            tests_run: vec![],
+            state_transition: None,
+            confidence: 0.91,
+            evidence_refs: vec!["turn:47".to_string()],
+            accepted_metadata: None,
+        },
+        ObservationalMemoryRecord {
+            turn_id: "turn-48".to_string(),
+            what_changed: "overflow observation should stay out of the injected prompt".to_string(),
+            why_it_changed: Some("observation section is intentionally capped".to_string()),
+            artifacts_touched: vec!["codex-rs/core/src/codex.rs".to_string()],
+            tests_run: vec![],
+            state_transition: None,
+            confidence: 0.9,
+            evidence_refs: vec!["turn:48".to_string()],
+            accepted_metadata: None,
+        },
+    ]);
+
+    let augmented = prompt_input_with_live_shadow_memory_for_program_name(
+        &input,
+        &shadow_pack,
+        Some(&snapshot),
+        Some("turn-45"),
+        Some("ccodex"),
+    );
+
+    let developer_texts = developer_input_texts(&augmented);
+    assert!(
+        developer_texts.iter().any(|text| text.contains("INJECT/1")),
+        "expected injection trace section, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().any(|text| {
+            text.contains(
+                "KEEP|canonical|canonical|selected as durable authority for prompt context",
+            )
+        }),
+        "expected canonical keep trace for injected durable state, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().any(|text| {
+            text.contains(
+                "KEEP|observational|turn-44|selected for prompt context within section limit",
+            )
+        }),
+        "expected keep trace for selected observation, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().any(|text| {
+            text.contains("DROP|observational|turn-48|dropped from prompt context because observational section limit was reached")
+        }),
+        "expected drop trace for overflow observation, got {developer_texts:?}"
+    );
+}
+
+#[test]
+fn ccodex_memory_observability_skips_canonical_keep_trace_for_cursor_only_state() {
+    let input = vec![ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "continue".to_string(),
+        }],
+        end_turn: None,
+        phase: None,
+    }];
+    let shadow_pack = ShadowTurnMemoryPack::default();
+    let snapshot = MemoryOsSnapshot {
+        canonical: CanonicalStateRecord {
+            continuation_cursor: Some("turn-200".to_string()),
+            ..CanonicalStateRecord::default()
+        },
+        observations: vec![],
+        episodics: vec![],
+        pragmatics: vec![],
+        retrievals: vec![],
+        promotion_decisions: vec![],
+        injection_traces: vec![],
+        contradictions: vec![],
+        brain_shadow: BrainShadowState::default(),
+    };
+
+    let augmented = prompt_input_with_live_shadow_memory_for_program_name(
+        &input,
+        &shadow_pack,
+        Some(&snapshot),
+        Some("turn-200"),
+        Some("ccodex"),
+    );
+
+    let developer_texts = developer_input_texts(&augmented);
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("CUR|turn-200")),
+        "expected cursor-only canonical state to still render continuation cursor: {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().all(|text| !text
+            .contains("KEEP|canonical|canonical|selected as durable authority for prompt context")),
+        "cursor-only canonical state should not emit a durable canonical keep trace: {developer_texts:?}"
+    );
+}
+
+#[test]
+fn ccodex_memory_observability_retrieval_failures_preserve_canonical_context() {
+    let input = vec![user_message("continue implementation in core/src/codex.rs")];
+    let shadow_pack = ShadowTurnMemoryPack::default();
+    let mut snapshot = memory_os_snapshot_fixture();
+    snapshot.retrievals = vec![RetrievalExplanationRecord {
+        memory_id: "bad-retrieval".to_string(),
+        plane: crate::memory_os::MemoryPlane::Retrieval,
+        score: f32::NAN,
+        rationale: "invalid score should not poison canonical injection".to_string(),
+        source_refs: vec!["turn:99".to_string()],
+    }];
+
+    let augmented = prompt_input_with_live_shadow_memory_for_program_name(
+        &input,
+        &shadow_pack,
+        Some(&snapshot),
+        Some("turn-201"),
+        Some("ccodex"),
+    );
+
+    let developer_texts = developer_input_texts(&augmented);
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| { text.contains("CANONICAL/1") && text.contains("GOAL|continue task 4") }),
+        "expected canonical section to survive retrieval failure, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts.iter().any(|text| {
+            text.contains("DROP|retrieval|bad-retrieval|dropped from prompt context because retrieval score was non-finite")
+        }),
+        "expected structured drop trace for invalid retrieval, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .all(|text| !text.contains("TRACE|bad-retrieval|retrieval|score=NaN")),
+        "expected invalid retrieval trace to be excluded from injected prompt, got {developer_texts:?}"
+    );
+}
+
+#[test]
+fn ccodex_memory_observability_instrumented_snapshot_is_serializable_for_saved_sessions() {
+    let mut snapshot = memory_os_snapshot_fixture();
+    snapshot.retrievals.push(RetrievalExplanationRecord {
+        memory_id: "bad-retrieval".to_string(),
+        plane: crate::memory_os::MemoryPlane::Retrieval,
+        score: f32::NEG_INFINITY,
+        rationale: "invalid score should become a structured drop trace".to_string(),
+        source_refs: vec![
+            "turn:99".to_string(),
+            "turn:01".to_string(),
+            "turn:99".to_string(),
+        ],
+    });
+
+    let instrumented = instrument_memory_os_snapshot_for_prompt(snapshot);
+    let serialized = serde_json::to_string(&instrumented).expect("serialize instrumented snapshot");
+    let restored: MemoryOsSnapshot =
+        serde_json::from_str(&serialized).expect("deserialize instrumented snapshot");
+
+    assert_eq!(restored, instrumented);
+    assert!(
+        restored.injection_traces.iter().any(|trace| {
+            trace.plane == crate::memory_os::MemoryPlane::Canonical
+                && trace.memory_id == "canonical"
+                && trace.decision == crate::memory_os::InjectionDecision::Keep
+        }),
+        "expected serialized snapshot to retain canonical keep trace, got {restored:?}"
+    );
+    assert!(
+        restored.injection_traces.iter().any(|trace| {
+            trace.plane == crate::memory_os::MemoryPlane::Retrieval
+                && trace.memory_id == "bad-retrieval"
+                && trace.decision == crate::memory_os::InjectionDecision::Drop
+                && trace.source_refs == vec!["turn:01".to_string(), "turn:99".to_string()]
+        }),
+        "expected serialized snapshot to retain normalized retrieval drop trace, got {restored:?}"
+    );
+    assert!(
+        restored
+            .retrievals
+            .iter()
+            .all(|retrieval| retrieval.memory_id != "bad-retrieval"),
+        "expected invalid retrieval to stay out of serialized prompt snapshot, got {restored:?}"
+    );
+    assert_eq!(restored.brain_shadow, instrumented.brain_shadow);
+}
+
+#[test]
+fn memory_os_brain_promotion_mode_requires_both_runtime_flags() {
+    let defaults = crate::features::Features::with_defaults();
+
+    assert_eq!(
+        memory_os_brain_promotion_mode(&defaults.clone().into()),
+        crate::memory_os::BrainPromotionMode::ShadowOnly
+    );
+
+    let mut shadow_only = defaults.clone();
+    shadow_only.enable(Feature::MemoryOsBrainCandidates);
+    assert_eq!(
+        memory_os_brain_promotion_mode(&shadow_only.into()),
+        crate::memory_os::BrainPromotionMode::ShadowOnly
+    );
+
+    let mut limited = defaults;
+    limited.enable(Feature::MemoryOsBrainCandidates);
+    limited.enable(Feature::MemoryOsLimitedPromotion);
+    assert_eq!(
+        memory_os_brain_promotion_mode(&limited.into()),
+        crate::memory_os::BrainPromotionMode::LimitedCorroboratedPromotion
+    );
+}
+
+#[test]
+fn memory_os_runtime_brain_mode_requires_feature_flag_before_any_brain_runs() {
+    let defaults = crate::features::Features::with_defaults();
+
+    assert_eq!(
+        memory_os_runtime_brain_mode(&defaults.clone().into(), false),
+        MemoryOsRuntimeBrainMode::Noop
+    );
+    assert_eq!(
+        memory_os_runtime_brain_mode(&defaults.into(), true),
+        MemoryOsRuntimeBrainMode::Noop
+    );
+}
+
+#[test]
+fn memory_os_runtime_brain_mode_falls_back_to_heuristic_without_remote_endpoint() {
+    let mut features = crate::features::Features::with_defaults();
+    features.enable(Feature::MemoryOsBrainCandidates);
+
+    assert_eq!(
+        memory_os_runtime_brain_mode(&features.into(), false),
+        MemoryOsRuntimeBrainMode::Heuristic
+    );
+}
+
+#[test]
+fn memory_os_runtime_brain_mode_prefers_remote_endpoint_when_configured() {
+    let mut features = crate::features::Features::with_defaults();
+    features.enable(Feature::MemoryOsBrainCandidates);
+
+    assert_eq!(
+        memory_os_runtime_brain_mode(&features.into(), true),
+        MemoryOsRuntimeBrainMode::Remote
+    );
+}
+
+#[test]
+fn sanitize_memory_os_snapshot_for_features_strips_brain_lane_when_disabled() {
+    let mut snapshot = memory_os_snapshot_fixture();
+    snapshot.promotion_decisions.push(PromotionDecisionRecord {
+        candidate_id: "brain-cand-1".to_string(),
+        plane: crate::memory_os::MemoryPlane::Observational,
+        origin: CandidateOrigin::BrainRxt,
+        authority_tier: AuthorityTier::Advisory,
+        status: PromotionStatus::Rejected,
+        rationale: "shadow-only rejection".to_string(),
+        source_event_kinds: vec![],
+        evidence_refs: vec![],
+        superseded_by: None,
+    });
+
+    let sanitized = sanitize_memory_os_snapshot_for_features(
+        snapshot.clone(),
+        &crate::features::Features::with_defaults().into(),
+    );
+
+    assert_eq!(sanitized.brain_shadow, BrainShadowState::default());
+    assert!(
+        sanitized
+            .promotion_decisions
+            .iter()
+            .all(|decision| decision.origin != CandidateOrigin::BrainRxt),
+        "expected brain-origin promotion decisions to be stripped, got {sanitized:?}"
+    );
+    assert_eq!(sanitized.canonical, snapshot.canonical);
+    assert_eq!(sanitized.observations, snapshot.observations);
+    assert_eq!(sanitized.retrievals, snapshot.retrievals);
+}
+
+#[test]
+fn sanitize_memory_os_snapshot_for_features_preserves_brain_lane_when_enabled() {
+    let snapshot = memory_os_snapshot_fixture();
+    let mut features = crate::features::Features::with_defaults();
+    features.enable(Feature::MemoryOsBrainCandidates);
+
+    let sanitized = sanitize_memory_os_snapshot_for_features(snapshot.clone(), &features.into());
+
+    assert_eq!(sanitized, snapshot);
+}
+
+#[test]
+fn parse_memory_os_snapshot_payload_accepts_legacy_unversioned_snapshot() {
+    let snapshot = memory_os_snapshot_fixture();
+    let legacy_payload = serde_json::to_string(&snapshot).expect("serialize legacy snapshot");
+
+    let parsed =
+        parse_memory_os_snapshot_payload(&legacy_payload).expect("parse legacy snapshot payload");
+
+    assert_eq!(parsed, snapshot);
+}
+
+#[test]
+fn parse_memory_os_snapshot_payload_rejects_unsupported_future_schema_version() {
+    let snapshot = memory_os_snapshot_fixture();
+    let snapshot_value = serde_json::to_value(&snapshot).expect("serialize snapshot value");
+    let serde_json::Value::Object(mut object) = snapshot_value else {
+        panic!("expected snapshot to serialize as an object");
+    };
+    object.insert(
+        "schema_version".to_string(),
+        serde_json::Value::from(MEMORY_OS_SNAPSHOT_SCHEMA_VERSION + 1),
+    );
+    let payload = serde_json::Value::Object(object).to_string();
+
+    assert!(
+        parse_memory_os_snapshot_payload(&payload).is_none(),
+        "expected future schema version to be rejected"
+    );
+}
+
+#[test]
+fn prompt_input_with_live_shadow_memory_skips_injection_for_stock_codex() {
+    let input = vec![user_message("continue implementation")];
+    let shadow_pack = ShadowTurnMemoryPack {
+        stable_ledger_text: "CTX/1
+DEC|d1|keep-hot-ledger|preserve hot ledger"
+            .to_string(),
+        hot_working_set_text: "HOT/1
+NXT|wire prompt injection"
+            .to_string(),
+        recall_annex_text: String::new(),
+    };
+
+    let augmented = prompt_input_with_live_shadow_memory_for_program_name(
+        &input,
+        &shadow_pack,
+        None,
+        Some("turn-1"),
+        Some("codex"),
+    );
+
+    assert_eq!(augmented, input);
 }
 
 fn make_connector(id: &str, name: &str) -> AppInfo {
@@ -752,6 +1456,235 @@ async fn reconstruct_history_uses_replacement_history_verbatim() {
         .await;
 
     assert_eq!(reconstructed.history, replacement_history);
+}
+
+#[tokio::test]
+async fn recover_shadow_memory_persists_inspectable_memory_os_snapshot_in_saved_session() {
+    let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
+    let rollout_path = attach_rollout_recorder(&session).await;
+    let snapshot = memory_os_snapshot_fixture();
+
+    session.set_memory_os_snapshot(Some(snapshot.clone())).await;
+
+    session
+        .replace_compacted_history(
+            vec![ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: format!("{}\nsummary only", crate::compact::SUMMARY_PREFIX),
+                }],
+                end_turn: None,
+                phase: None,
+            }],
+            Some(turn_context.to_turn_context_item()),
+            CompactedItem {
+                message: "summary only".to_string(),
+                replacement_history: Some(Vec::new()),
+            },
+        )
+        .await;
+    session.flush_rollout().await;
+
+    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
+        .await
+        .expect("read rollout history")
+    else {
+        panic!("expected resumed rollout history");
+    };
+
+    let snapshots = resumed
+        .history
+        .iter()
+        .filter_map(|item| match item {
+            RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent { message }))
+                if message.starts_with("memory_os_snapshot:") =>
+            {
+                Some(message.trim_start_matches("memory_os_snapshot:"))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        snapshots.len(),
+        1,
+        "expected one persisted memory os snapshot"
+    );
+    assert_eq!(
+        serde_json::from_str::<MemoryOsSnapshot>(snapshots[0]).expect("deserialize snapshot"),
+        snapshot
+    );
+    assert!(
+        snapshots[0].contains("\"schema_version\""),
+        "expected persisted snapshot payload to include schema version, got {}",
+        snapshots[0]
+    );
+    assert!(
+        snapshots[0].contains("\"brain_shadow\""),
+        "expected persisted snapshot payload to include brain shadow state, got {}",
+        snapshots[0]
+    );
+}
+
+#[tokio::test]
+async fn recover_shadow_memory_prefers_persisted_memory_os_snapshot_over_stale_transcript_history()
+{
+    let (session, _turn_context) = make_session_and_context().await;
+    let snapshot = memory_os_snapshot_fixture();
+    let rollout_items = vec![
+        RolloutItem::Compacted(CompactedItem {
+            message: "stale summary only".to_string(),
+            replacement_history: Some(vec![
+                ResponseItem::Message {
+                    id: None,
+                    role: "assistant".to_string(),
+                    content: vec![ContentItem::OutputText {
+                        text: "Objective: restart task 1\nDecision: restart from the first task\nNext step: redo task 1".to_string(),
+                    }],
+                    end_turn: None,
+                    phase: None,
+                },
+                ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputText {
+                        text: format!("{}\nstale summary only", crate::compact::SUMMARY_PREFIX),
+                    }],
+                    end_turn: None,
+                    phase: None,
+                },
+            ]),
+        }),
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: format!(
+                "memory_os_snapshot:{}",
+                serde_json::to_string(&snapshot).expect("serialize snapshot")
+            ),
+        })),
+    ];
+
+    session
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: ThreadId::default(),
+            history: rollout_items,
+            rollout_path: PathBuf::from("/tmp/resume.jsonl"),
+        }))
+        .await;
+
+    assert_eq!(
+        session.memory_os_snapshot().await,
+        Some(sanitize_memory_os_snapshot_for_features(
+            snapshot.clone(),
+            &crate::features::Features::with_defaults().into(),
+        ))
+    );
+
+    session
+        .set_shadow_working_ledger(WorkingLedger::default())
+        .await;
+    session.set_shadow_hot_working_set(Vec::new()).await;
+
+    let (rebuilt_ledger, hot_working_set, recovered) =
+        recover_shadow_memory_if_needed(&session).await;
+
+    assert!(
+        recovered,
+        "expected recovery from persisted memory os snapshot"
+    );
+    assert_eq!(rebuilt_ledger.objective.as_deref(), Some("continue task 4"));
+    assert_eq!(
+        rebuilt_ledger.decisions,
+        vec![crate::turn_memory::IdentifiedRecord {
+            id: "D9".to_string(),
+            text: "prefer canonical memory planes over stale transcript restart prose".to_string(),
+        }]
+    );
+    assert_eq!(
+        rebuilt_ledger.attempts,
+        vec![crate::turn_memory::IdentifiedRecord {
+            id: "A4".to_string(),
+            text: "capture resume-after-compaction regressions".to_string(),
+        }]
+    );
+    assert_eq!(
+        rebuilt_ledger.verified_successes,
+        vec![crate::turn_memory::LinkedRecord {
+            id: "O4".to_string(),
+            text: "proved transcript reconstruction can restart stale work".to_string(),
+            failure_class: None,
+        }]
+    );
+    assert_eq!(rebuilt_ledger.next_step.as_deref(), Some("continue task 4"));
+    assert!(
+        hot_working_set.iter().any(|record| matches!(
+            record,
+            EpisodicRecord::NextStep(text) if text == "continue task 4"
+        )),
+        "expected recovered hot set to reflect persisted snapshot, got {hot_working_set:?}"
+    );
+}
+
+#[tokio::test]
+async fn recover_shadow_memory_accepts_legacy_unversioned_memory_os_snapshot_on_resume() {
+    let (session, _turn_context) = make_session_and_context().await;
+    let snapshot = memory_os_snapshot_fixture();
+    let legacy_payload = serde_json::to_string(&snapshot).expect("serialize legacy snapshot");
+    let rollout_items = vec![
+        RolloutItem::Compacted(CompactedItem {
+            message: "stale summary only".to_string(),
+            replacement_history: Some(vec![ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "Objective: restart task 1\nDecision: restart from the first task\nNext step: redo task 1".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            }]),
+        }),
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent {
+            message: format!("memory_os_snapshot:{legacy_payload}"),
+        })),
+    ];
+
+    session
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: ThreadId::default(),
+            history: rollout_items,
+            rollout_path: PathBuf::from("/tmp/resume-legacy.jsonl"),
+        }))
+        .await;
+
+    assert_eq!(
+        session.memory_os_snapshot().await,
+        Some(sanitize_memory_os_snapshot_for_features(
+            snapshot.clone(),
+            &crate::features::Features::with_defaults().into(),
+        ))
+    );
+
+    session
+        .set_shadow_working_ledger(WorkingLedger::default())
+        .await;
+    session.set_shadow_hot_working_set(Vec::new()).await;
+
+    let (rebuilt_ledger, hot_working_set, recovered) =
+        recover_shadow_memory_if_needed(&session).await;
+
+    assert!(
+        recovered,
+        "expected recovery from legacy memory os snapshot"
+    );
+    assert_eq!(rebuilt_ledger.objective.as_deref(), Some("continue task 4"));
+    assert_eq!(rebuilt_ledger.next_step.as_deref(), Some("continue task 4"));
+    assert!(
+        hot_working_set.iter().any(|record| matches!(
+            record,
+            EpisodicRecord::NextStep(text) if text == "continue task 4"
+        )),
+        "expected recovered hot set to reflect legacy snapshot, got {hot_working_set:?}"
+    );
 }
 
 #[tokio::test]

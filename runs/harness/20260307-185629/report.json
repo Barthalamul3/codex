@@ -1,0 +1,30 @@
+{
+  "run_id": "20260307-185629",
+  "task_id": "ccodex-memory-os-07-consolidation",
+  "profile": "ccodex-memory-os-07-consolidation",
+  "status": "pass",
+  "results": [
+    {
+      "name": "format_check",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo fmt --all --check"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-185629/logs/format_check.stdout.log",
+      "stderr_log": "runs/harness/20260307-185629/logs/format_check.stderr.log"
+    },
+    {
+      "name": "tests_consolidation",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo test -p codex-core memory_os_consolidate -- --nocapture"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-185629/logs/tests_consolidation.stdout.log",
+      "stderr_log": "runs/harness/20260307-185629/logs/tests_consolidation.stderr.log"
+    }
+  ]
+}

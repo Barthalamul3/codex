@@ -1,4 +1,6 @@
 use super::*;
+use crate::memory_os::ContradictionKind;
+use crate::memory_os::ContradictionRecord;
 
 // Return value of `Session::reconstruct_history_from_rollout`, bundling the rebuilt history with
 // the resume/fork hydration metadata derived from the same replay.
@@ -87,6 +89,21 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         rollout_items: &[RolloutItem],
+    ) -> RolloutReconstruction {
+        let program_name = std::env::args().next();
+        self.reconstruct_history_from_rollout_for_program_name(
+            turn_context,
+            rollout_items,
+            program_name.as_deref(),
+        )
+        .await
+    }
+
+    pub(super) async fn reconstruct_history_from_rollout_for_program_name(
+        &self,
+        turn_context: &TurnContext,
+        rollout_items: &[RolloutItem],
+        program_name: Option<&str>,
     ) -> RolloutReconstruction {
         // Replay metadata should already match the shape of the future lazy reverse loader, even
         // while history materialization still uses an eager bridge. Scan newest-to-oldest,
@@ -229,8 +246,28 @@ impl Session {
 
         let mut history = ContextManager::new();
         let mut saw_legacy_compaction_without_replacement_history = false;
+        let is_ccodex = super::should_enable_live_shadow_memory_for_program_name(program_name);
+        let memory_os_snapshot = if is_ccodex {
+            super::latest_memory_os_snapshot_from_rollout_items(rollout_items).map(|snapshot| {
+                super::sanitize_memory_os_snapshot_for_features(
+                    crate::memory_os::consolidate_snapshot(&snapshot),
+                    &self.features,
+                )
+            })
+        } else {
+            None
+        };
+        let memory_authority_ledger = memory_os_snapshot
+            .as_ref()
+            .map(super::shadow_ledger_from_memory_os_snapshot);
         if let Some(base_replacement_history) = base_replacement_history {
-            history.replace(base_replacement_history.to_vec());
+            history.replace(sanitize_reconstructed_history_for_memory_frame(
+                base_replacement_history,
+                memory_authority_ledger.as_ref(),
+                memory_os_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.contradictions.as_slice()),
+            ));
         }
         // Materialize exact history semantics from the replay-derived suffix. The eventual lazy
         // design should keep this same replay shape, but drive it from a resumable reverse source
@@ -247,7 +284,13 @@ impl Session {
                     if let Some(replacement_history) = &compacted.replacement_history {
                         // This should actually never happen, because the reverse loop above (to build rollout_suffix)
                         // should stop before any compaction that has Some replacement_history
-                        history.replace(replacement_history.clone());
+                        history.replace(sanitize_reconstructed_history_for_memory_frame(
+                            replacement_history,
+                            memory_authority_ledger.as_ref(),
+                            memory_os_snapshot
+                                .as_ref()
+                                .map(|snapshot| snapshot.contradictions.as_slice()),
+                        ));
                     } else {
                         saw_legacy_compaction_without_replacement_history = true;
                         // Legacy rollouts without `replacement_history` should rebuild the
@@ -288,10 +331,248 @@ impl Session {
             reference_context_item
         };
 
+        let mut reconstructed_history = history.raw_items().to_vec();
+        if let Some(snapshot) = memory_os_snapshot.as_ref()
+            && let Some(memory_plane_context) =
+                crate::memory_os::assemble_memory_plane_context_item(snapshot)
+        {
+            reconstructed_history.push(memory_plane_context);
+        }
+
         RolloutReconstruction {
-            history: history.raw_items().to_vec(),
+            history: reconstructed_history,
             previous_turn_settings,
             reference_context_item,
         }
     }
+}
+
+fn sanitize_reconstructed_history_for_memory_frame(
+    items: &[ResponseItem],
+    memory_authority_ledger: Option<&WorkingLedger>,
+    contradiction_records: Option<&[ContradictionRecord]>,
+) -> Vec<ResponseItem> {
+    if memory_authority_ledger.is_none() && contradiction_records.unwrap_or_default().is_empty() {
+        return items.to_vec();
+    }
+
+    items
+        .iter()
+        .filter_map(|item| {
+            sanitize_reconstructed_response_item(
+                item,
+                memory_authority_ledger,
+                contradiction_records,
+            )
+        })
+        .collect()
+}
+
+fn sanitize_reconstructed_response_item(
+    item: &ResponseItem,
+    memory_authority_ledger: Option<&WorkingLedger>,
+    contradiction_records: Option<&[ContradictionRecord]>,
+) -> Option<ResponseItem> {
+    let ResponseItem::Message {
+        id,
+        role,
+        content,
+        end_turn,
+        phase,
+    } = item
+    else {
+        return Some(item.clone());
+    };
+
+    let sanitized_content = content
+        .iter()
+        .filter_map(|content_item| match content_item {
+            ContentItem::InputText { text } => {
+                sanitize_task_state_text(text, memory_authority_ledger, contradiction_records)
+                    .map(|sanitized| ContentItem::InputText { text: sanitized })
+            }
+            ContentItem::OutputText { text } => {
+                sanitize_task_state_text(text, memory_authority_ledger, contradiction_records)
+                    .map(|sanitized| ContentItem::OutputText { text: sanitized })
+            }
+            other => Some(other.clone()),
+        })
+        .collect::<Vec<_>>();
+
+    if sanitized_content.is_empty() {
+        return None;
+    }
+
+    Some(ResponseItem::Message {
+        id: id.clone(),
+        role: role.clone(),
+        content: sanitized_content,
+        end_turn: *end_turn,
+        phase: phase.clone(),
+    })
+}
+
+fn sanitize_task_state_text(
+    text: &str,
+    memory_authority_ledger: Option<&WorkingLedger>,
+    contradiction_records: Option<&[ContradictionRecord]>,
+) -> Option<String> {
+    let contradiction_signals =
+        contradiction_signals_from_memory_frame(memory_authority_ledger, contradiction_records);
+    let filtered = text
+        .lines()
+        .filter(|line| !is_stale_task_state_line(line))
+        .filter_map(|line| strip_conflicting_task_progress_phrases(line, &contradiction_signals))
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        );
+    let trimmed = filtered.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+#[derive(Debug, Default)]
+struct ContradictionSignals {
+    continuing_task_progress: bool,
+    conflicting_next_steps: Vec<String>,
+}
+
+fn contradiction_signals_from_memory_frame(
+    memory_authority_ledger: Option<&WorkingLedger>,
+    contradiction_records: Option<&[ContradictionRecord]>,
+) -> ContradictionSignals {
+    let objective = memory_authority_ledger
+        .and_then(|ledger| ledger.objective.as_deref())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let next_step = memory_authority_ledger
+        .and_then(|ledger| ledger.next_step.as_deref())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let conflicting_next_steps = contradiction_records
+        .unwrap_or_default()
+        .iter()
+        .filter(|record| matches!(record.kind, ContradictionKind::NextStepRegression))
+        .map(|record| record.conflicting_value.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    let continuing_task_progress = objective.contains("continue task")
+        || next_step.contains("continue task")
+        || next_step.contains("advance task")
+        || !conflicting_next_steps.is_empty();
+
+    ContradictionSignals {
+        continuing_task_progress,
+        conflicting_next_steps,
+    }
+}
+
+fn strip_conflicting_task_progress_phrases(
+    line: &str,
+    contradiction_signals: &ContradictionSignals,
+) -> Option<String> {
+    let mut sanitized = line.to_string();
+    if contradiction_signals.continuing_task_progress {
+        let score = contradictory_progress_score(line, contradiction_signals);
+        if score > 0 {
+            for phrase in conflicting_restart_progress_phrases() {
+                sanitized = sanitized.replace(phrase, "");
+            }
+        }
+    }
+    sanitized = cleanup_sanitized_clause(sanitized.as_str());
+    (!sanitized.is_empty()).then_some(sanitized)
+}
+
+fn contradictory_progress_score(line: &str, contradiction_signals: &ContradictionSignals) -> i32 {
+    let lower = line.to_ascii_lowercase();
+    let mut score = 0;
+    for phrase in conflicting_restart_progress_phrases() {
+        if lower.contains(phrase) {
+            score += 3;
+        }
+    }
+    for conflicting_next_step in &contradiction_signals.conflicting_next_steps {
+        if !conflicting_next_step.is_empty() && lower.contains(conflicting_next_step) {
+            score += 3;
+        }
+    }
+    for token in [
+        "restart",
+        "redo",
+        "start over",
+        "revisit",
+        "go back",
+        "return to",
+    ] {
+        if lower.contains(token) {
+            score += 1;
+        }
+    }
+    for token in ["task 1", "first step", "from scratch"] {
+        if lower.contains(token) {
+            score += 1;
+        }
+    }
+    for token in ["continue", "advance", "keep going"] {
+        if lower.contains(token) {
+            score -= 1;
+        }
+    }
+    score
+}
+
+fn cleanup_sanitized_clause(text: &str) -> String {
+    text.replace(" ,", ",")
+        .replace(" .", ".")
+        .replace("  ", " ")
+        .replace(" , and", " and")
+        .replace(" and .", ".")
+        .replace(", and", " and")
+        .trim_matches(|ch: char| ch == ',' || ch == ' ')
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace("We should ,", "We should")
+        .replace("We should and", "We should")
+        .replace("We should.", "")
+        .replace("Current plan: .", "")
+        .replace("Current plan: and", "Current plan:")
+        .trim()
+        .to_string()
+}
+
+fn conflicting_restart_progress_phrases() -> &'static [&'static str] {
+    &[
+        "start over from task 1",
+        "redo step 1",
+        "restart the implementation from scratch",
+        "restart task 1",
+        "redo task 1",
+        "restart from the first task",
+        "go back to task 1 tomorrow",
+        "redo the first step before anything else",
+        "revisit task 1",
+        "return to the first step",
+    ]
+}
+
+fn is_stale_task_state_line(line: &str) -> bool {
+    let normalized = line.trim().to_ascii_lowercase();
+    [
+        "objective:",
+        "decision:",
+        "why:",
+        "reason:",
+        "failure:",
+        "next step:",
+        "next:",
+        "blocker:",
+        "tried:",
+        "attempt:",
+        "worked:",
+        "success:",
+    ]
+    .iter()
+    .any(|prefix| normalized.starts_with(prefix))
 }

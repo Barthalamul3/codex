@@ -1,0 +1,5 @@
+status: fail
+timestamp: 2026-03-07T10:25:18-08:00
+command: tools/validate_artifacts.sh runs/ccodex_loop/20260307-182122
+result: not_run
+reason: tools/validate_artifacts.sh is missing from this worktree

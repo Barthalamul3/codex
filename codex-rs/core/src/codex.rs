@@ -29,6 +29,13 @@ use crate::exec_policy::ExecPolicyManager;
 use crate::features::FEATURES;
 use crate::features::Feature;
 use crate::features::maybe_push_unstable_features_warning;
+use crate::hot_working_set::select_hot_working_set;
+use crate::memory_os::CanonicalStateRecord;
+use crate::memory_os::InjectionDecision;
+use crate::memory_os::InjectionTraceRecord;
+use crate::memory_os::MemoryOsSnapshot;
+use crate::memory_os::MemoryPlane;
+use crate::memory_recall::select_recall_annex;
 #[cfg(test)]
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
@@ -48,6 +55,17 @@ use crate::stream_events_utils::raw_assistant_output_text_from_item;
 use crate::stream_events_utils::record_completed_response_item;
 use crate::terminal;
 use crate::truncate::TruncationPolicy;
+use crate::truncate::approx_token_count;
+use crate::turn_memory::EpisodicRecord;
+use crate::turn_memory::IdentifiedRecord;
+use crate::turn_memory::LinkedRecord;
+use crate::turn_memory::WorkingLedger;
+use crate::turn_memory::extract_episodic_records;
+use crate::turn_memory::format_shadow_record_block;
+use crate::turn_memory::merge_episodic_records_into_ledger;
+use crate::turn_memory::rebuild_working_ledger_from_items;
+use crate::turn_memory::working_ledger_is_empty;
+use crate::turn_memory::working_ledger_records;
 use crate::turn_metadata::TurnMetadataState;
 use crate::util::error_or_panic;
 use crate::ws_version_from_features;
@@ -166,6 +184,27 @@ use codex_config::CONFIG_TOML_FILE;
 mod rollout_reconstruction;
 #[cfg(test)]
 mod rollout_reconstruction_tests;
+
+const MEMORY_OS_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(serde::Serialize)]
+struct PersistedMemoryOsSnapshot<'a> {
+    schema_version: u32,
+    #[serde(flatten)]
+    snapshot: &'a MemoryOsSnapshot,
+}
+
+#[derive(serde::Deserialize)]
+struct ParsedMemoryOsSnapshot {
+    #[serde(default = "current_memory_os_snapshot_schema_version")]
+    schema_version: u32,
+    #[serde(flatten)]
+    snapshot: MemoryOsSnapshot,
+}
+
+const fn current_memory_os_snapshot_schema_version() -> u32 {
+    MEMORY_OS_SNAPSHOT_SCHEMA_VERSION
+}
 
 #[derive(Debug, PartialEq)]
 pub enum SteerInputError {
@@ -1882,6 +1921,7 @@ impl Session {
                     self.record_into_history(&reconstructed_history, &turn_context)
                         .await;
                 }
+                hydrate_shadow_memory_from_rollout_items(self, &rollout_items).await;
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
@@ -3104,6 +3144,17 @@ impl Session {
             self.persist_rollout_items(&[RolloutItem::TurnContext(turn_context_item)])
                 .await;
         }
+        if let Some(snapshot) = self.memory_os_snapshot().await
+            && !snapshot.is_empty()
+            && let Ok(serialized) = serialize_memory_os_snapshot(&snapshot)
+        {
+            self.persist_rollout_items(&[RolloutItem::EventMsg(EventMsg::BackgroundEvent(
+                BackgroundEventEvent {
+                    message: format!("memory_os_snapshot:{serialized}"),
+                },
+            ))])
+            .await;
+        }
     }
 
     async fn persist_rollout_response_items(&self, items: &[ResponseItem]) {
@@ -3404,6 +3455,36 @@ impl Session {
     pub async fn set_dependency_env(&self, values: HashMap<String, String>) {
         let mut state = self.state.lock().await;
         state.set_dependency_env(values);
+    }
+
+    pub(crate) async fn shadow_working_ledger(&self) -> WorkingLedger {
+        let state = self.state.lock().await;
+        state.shadow_working_ledger()
+    }
+
+    pub(crate) async fn set_shadow_working_ledger(&self, ledger: WorkingLedger) {
+        let mut state = self.state.lock().await;
+        state.set_shadow_working_ledger(ledger);
+    }
+
+    pub(crate) async fn shadow_hot_working_set(&self) -> Vec<EpisodicRecord> {
+        let state = self.state.lock().await;
+        state.shadow_hot_working_set()
+    }
+
+    pub(crate) async fn set_shadow_hot_working_set(&self, records: Vec<EpisodicRecord>) {
+        let mut state = self.state.lock().await;
+        state.set_shadow_hot_working_set(records);
+    }
+
+    pub(crate) async fn memory_os_snapshot(&self) -> Option<MemoryOsSnapshot> {
+        let state = self.state.lock().await;
+        state.memory_os_snapshot()
+    }
+
+    pub(crate) async fn set_memory_os_snapshot(&self, snapshot: Option<MemoryOsSnapshot>) {
+        let mut state = self.state.lock().await;
+        state.set_memory_os_snapshot(snapshot);
     }
 
     pub(crate) async fn set_server_reasoning_included(&self, included: bool) {
@@ -4723,6 +4804,7 @@ mod handlers {
             reconstructed.reference_context_item.clone(),
         )
         .await;
+        super::hydrate_shadow_memory_from_rollout_items(sess, &replay_items).await;
         sess.set_previous_turn_settings(reconstructed.previous_turn_settings)
             .await;
         sess.recompute_token_usage(turn_context.as_ref()).await;
@@ -5289,6 +5371,7 @@ pub(crate) async fn run_turn(
     // many turns, from the perspective of the user, it is a single turn.
     let turn_diff_tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
     let mut server_model_warning_emitted_for_turn = false;
+    let history_len_before_turn = sess.clone_history().await.raw_items().len();
 
     // `ModelClientSession` is turn-scoped and caches WebSocket + sticky routing state, so we reuse
     // one instance across retries within this turn.
@@ -5451,6 +5534,80 @@ pub(crate) async fn run_turn(
                         )
                         .await;
                         return None;
+                    }
+                    let history = sess.clone_history().await;
+                    let turn_items = history
+                        .raw_items()
+                        .get(history_len_before_turn..)
+                        .unwrap_or(&[])
+                        .to_vec();
+                    let records = extract_episodic_records(&turn_items);
+                    if !records.is_empty() {
+                        let current_ledger = sess.shadow_working_ledger().await;
+                        let merged_ledger =
+                            merge_episodic_records_into_ledger(current_ledger, &records);
+                        sess.set_shadow_working_ledger(merged_ledger.clone()).await;
+                        let current_snapshot = sess.memory_os_snapshot().await;
+                        let noop_brain = crate::memory_os::NoopMemoryBrain;
+                        let heuristic_brain = crate::memory_os::HeuristicMemoryBrain;
+                        let remote_brain = crate::memory_os::configured_runtime_memory_brain();
+                        let brain: &dyn crate::memory_os::MemoryBrain = match (
+                            memory_os_runtime_brain_mode(
+                                &turn_context.features,
+                                remote_brain.is_some(),
+                            ),
+                            remote_brain.as_ref(),
+                        ) {
+                            (MemoryOsRuntimeBrainMode::Noop, _) => &noop_brain,
+                            (MemoryOsRuntimeBrainMode::Heuristic, _) => &heuristic_brain,
+                            (MemoryOsRuntimeBrainMode::Remote, Some(remote_brain)) => remote_brain,
+                            (MemoryOsRuntimeBrainMode::Remote, None) => &heuristic_brain,
+                        };
+                        let updated_snapshot = sanitize_memory_os_snapshot_for_features(
+                            crate::memory_os::update_snapshot_from_turn_with_brain_mode(
+                                current_snapshot.as_ref(),
+                                &merged_ledger,
+                                &turn_context.sub_id,
+                                &turn_items,
+                                brain,
+                                memory_os_brain_promotion_mode(&turn_context.features),
+                            ),
+                            &turn_context.features,
+                        );
+                        sess.set_memory_os_snapshot(Some(updated_snapshot.clone()))
+                            .await;
+                        let hot_working_set = select_hot_working_set(&merged_ledger, 6);
+                        sess.set_shadow_hot_working_set(hot_working_set.clone())
+                            .await;
+                        emit_post_turn_memory_os_snapshot_event(
+                            &sess,
+                            &turn_context,
+                            &updated_snapshot,
+                        )
+                        .await;
+
+                        if turn_context.features.enabled(Feature::RuntimeMetrics) {
+                            for record in &records {
+                                sess.notify_background_event(
+                                    &turn_context,
+                                    format!("turn_memory_shadow:{}", record.to_ctx_v1_line()),
+                                )
+                                .await;
+                            }
+                            sess.notify_background_event(
+                                &turn_context,
+                                format!("turn_ledger_shadow:{}", merged_ledger.to_ctx_v1()),
+                            )
+                            .await;
+                            sess.notify_background_event(
+                                &turn_context,
+                                format!(
+                                    "turn_hotset_shadow:{}",
+                                    format_shadow_record_block("HOT/1", &hot_working_set)
+                                ),
+                            )
+                            .await;
+                        }
                     }
                     break;
                 }
@@ -5734,6 +5891,137 @@ fn filter_codex_apps_mcp_tools(
 
 fn codex_apps_connector_id(tool: &crate::mcp_connection_manager::ToolInfo) -> Option<&str> {
     tool.connector_id.as_deref()
+}
+
+async fn recover_shadow_memory_if_needed(
+    sess: &Session,
+) -> (WorkingLedger, Vec<EpisodicRecord>, bool) {
+    let ledger = sess.shadow_working_ledger().await;
+    let hot_working_set = sess.shadow_hot_working_set().await;
+    if !working_ledger_is_empty(&ledger) {
+        let hot_working_set = if hot_working_set.is_empty() {
+            let rebuilt_hot_working_set = select_hot_working_set(&ledger, 6);
+            sess.set_shadow_hot_working_set(rebuilt_hot_working_set.clone())
+                .await;
+            rebuilt_hot_working_set
+        } else {
+            hot_working_set
+        };
+        return (ledger, hot_working_set, false);
+    }
+
+    if let Some(snapshot) = sess
+        .memory_os_snapshot()
+        .await
+        .map(|snapshot| sanitize_memory_os_snapshot_for_features(snapshot, &sess.features))
+        && !snapshot.canonical.is_empty()
+    {
+        sess.set_memory_os_snapshot(Some(snapshot.clone())).await;
+        let rebuilt_ledger = shadow_ledger_from_memory_os_snapshot(&snapshot);
+        let rebuilt_hot_working_set = select_hot_working_set(&rebuilt_ledger, 6);
+        sess.set_shadow_working_ledger(rebuilt_ledger.clone()).await;
+        sess.set_shadow_hot_working_set(rebuilt_hot_working_set.clone())
+            .await;
+        return (rebuilt_ledger, rebuilt_hot_working_set, true);
+    }
+
+    let history = sess.clone_history().await;
+    let raw_items = history.raw_items();
+    if raw_items.is_empty() {
+        return (ledger, hot_working_set, false);
+    }
+
+    let rebuilt_ledger = rebuild_working_ledger_from_items(raw_items);
+    if working_ledger_is_empty(&rebuilt_ledger) {
+        return (rebuilt_ledger, hot_working_set, false);
+    }
+
+    let rebuilt_hot_working_set = select_hot_working_set(&rebuilt_ledger, 6);
+    sess.set_shadow_working_ledger(rebuilt_ledger.clone()).await;
+    sess.set_shadow_hot_working_set(rebuilt_hot_working_set.clone())
+        .await;
+    (rebuilt_ledger, rebuilt_hot_working_set, true)
+}
+
+async fn hydrate_shadow_memory_from_rollout_items(sess: &Session, rollout_items: &[RolloutItem]) {
+    let snapshot = latest_memory_os_snapshot_from_rollout_items(rollout_items)
+        .map(|snapshot| sanitize_memory_os_snapshot_for_features(snapshot, &sess.features));
+    sess.set_memory_os_snapshot(snapshot.clone()).await;
+    if let Some(snapshot) = snapshot
+        && !snapshot.canonical.is_empty()
+    {
+        let rebuilt_ledger = shadow_ledger_from_memory_os_snapshot(&snapshot);
+        let rebuilt_hot_working_set = select_hot_working_set(&rebuilt_ledger, 6);
+        sess.set_shadow_working_ledger(rebuilt_ledger.clone()).await;
+        sess.set_shadow_hot_working_set(rebuilt_hot_working_set)
+            .await;
+    }
+}
+
+pub(super) fn latest_memory_os_snapshot_from_rollout_items(
+    rollout_items: &[RolloutItem],
+) -> Option<MemoryOsSnapshot> {
+    rollout_items.iter().rev().find_map(|item| match item {
+        RolloutItem::EventMsg(EventMsg::BackgroundEvent(BackgroundEventEvent { message })) => {
+            parse_memory_os_snapshot(message)
+        }
+        RolloutItem::ResponseItem(_)
+        | RolloutItem::Compacted(_)
+        | RolloutItem::TurnContext(_)
+        | RolloutItem::SessionMeta(_)
+        | RolloutItem::EventMsg(_) => None,
+    })
+}
+
+fn parse_memory_os_snapshot(message: &str) -> Option<MemoryOsSnapshot> {
+    let payload = message.strip_prefix("memory_os_snapshot:")?;
+    parse_memory_os_snapshot_payload(payload)
+}
+
+pub(super) fn shadow_ledger_from_memory_os_snapshot(snapshot: &MemoryOsSnapshot) -> WorkingLedger {
+    let canonical = &snapshot.canonical;
+    WorkingLedger {
+        objective: canonical.objective.clone(),
+        constraints: canonical.constraints.clone(),
+        decisions: canonical
+            .decision_ledger
+            .iter()
+            .map(|entry| IdentifiedRecord {
+                id: entry.id.clone(),
+                text: entry.summary.clone(),
+            })
+            .collect(),
+        rationales: Vec::new(),
+        attempts: canonical
+            .attempt_ledger
+            .iter()
+            .map(|entry| IdentifiedRecord {
+                id: entry.id.clone(),
+                text: entry.summary.clone(),
+            })
+            .collect(),
+        verified_successes: canonical
+            .outcome_ledger
+            .iter()
+            .map(|entry| LinkedRecord {
+                id: entry.id.clone(),
+                text: entry.summary.clone(),
+                failure_class: None,
+            })
+            .collect(),
+        verified_failures: Vec::new(),
+        artifacts: canonical
+            .active_files
+            .iter()
+            .map(|path| crate::turn_memory::ArtifactRecord {
+                id: None,
+                text: path.clone(),
+            })
+            .collect(),
+        blockers: canonical.blockers.clone(),
+        next_step: canonical.next_steps.first().cloned(),
+        narration: Vec::new(),
+    }
 }
 
 fn build_prompt(
@@ -6529,9 +6817,58 @@ async fn try_run_sampling_request(
         auth_mode = sess.services.auth_manager.auth_mode(),
         features = sess.features.enabled_features(),
     );
+    let (shadow_ledger, shadow_hot_working_set, shadow_recovered) =
+        recover_shadow_memory_if_needed(&sess).await;
+    let shadow_pack = ShadowTurnMemoryPack::from_session_and_input(
+        &shadow_ledger,
+        &shadow_hot_working_set,
+        &prompt.input,
+    );
+    if turn_context.features.enabled(Feature::RuntimeMetrics) {
+        if shadow_recovered {
+            sess.notify_background_event(
+                &turn_context,
+                format!(
+                    "turn_shadow_recovered:source=history ledger_records={} hot_records={}",
+                    working_ledger_records(&shadow_ledger).len(),
+                    shadow_hot_working_set.len()
+                ),
+            )
+            .await;
+        }
+        if !shadow_pack.hot_working_set_text.is_empty() {
+            sess.notify_background_event(
+                &turn_context,
+                format!("turn_hotset_shadow:{}", shadow_pack.hot_working_set_text),
+            )
+            .await;
+        }
+        if !shadow_pack.recall_annex_text.is_empty() {
+            sess.notify_background_event(
+                &turn_context,
+                format!("turn_recall_annex_shadow:{}", shadow_pack.recall_annex_text),
+            )
+            .await;
+        }
+    }
+    emit_turn_packing_shadow_event(&sess, &turn_context, prompt, &shadow_pack, false).await;
+    let memory_os_snapshot = sess
+        .memory_os_snapshot()
+        .await
+        .map(instrument_memory_os_snapshot_for_prompt);
+    if let Some(snapshot) = memory_os_snapshot.as_ref() {
+        sess.set_memory_os_snapshot(Some(snapshot.clone())).await;
+        emit_memory_os_observability_metrics(&sess, snapshot);
+    }
+    let effective_prompt = prompt_with_live_shadow_memory(
+        prompt,
+        &shadow_pack,
+        memory_os_snapshot.as_ref(),
+        &turn_context.sub_id,
+    );
     let mut stream = client_session
         .stream(
-            prompt,
+            &effective_prompt,
             &turn_context.model_info,
             &turn_context.otel_manager,
             turn_context.reasoning_effort,
@@ -6840,6 +7177,624 @@ async fn try_run_sampling_request(
     }
 
     outcome
+}
+
+#[derive(Debug, Clone, Default)]
+struct ShadowTurnMemoryPack {
+    stable_ledger_text: String,
+    hot_working_set_text: String,
+    recall_annex_text: String,
+}
+
+impl ShadowTurnMemoryPack {
+    fn from_session_and_input(
+        ledger: &WorkingLedger,
+        hot_working_set: &[EpisodicRecord],
+        input: &[ResponseItem],
+    ) -> Self {
+        let stable_ledger_text = if working_ledger_records(ledger).is_empty() {
+            String::new()
+        } else {
+            ledger.to_ctx_v1()
+        };
+        let hot_working_set_text = if hot_working_set.is_empty() {
+            String::new()
+        } else {
+            format_shadow_record_block("HOT/1", hot_working_set)
+        };
+        let query = user_query_from_input(input);
+        let recall_annex = if query.is_empty() {
+            Vec::new()
+        } else {
+            select_recall_annex(&working_ledger_records(ledger), &query, 3)
+        };
+        let recall_annex_text = if recall_annex.is_empty() {
+            String::new()
+        } else {
+            format_shadow_record_block("RCL/1", &recall_annex)
+        };
+
+        Self {
+            stable_ledger_text,
+            hot_working_set_text,
+            recall_annex_text,
+        }
+    }
+}
+
+fn prompt_with_live_shadow_memory(
+    prompt: &Prompt,
+    shadow_pack: &ShadowTurnMemoryPack,
+    memory_os_snapshot: Option<&MemoryOsSnapshot>,
+    turn_id: &str,
+) -> Prompt {
+    let input = prompt_input_with_live_shadow_memory_for_program_name(
+        &prompt.input,
+        shadow_pack,
+        memory_os_snapshot,
+        Some(turn_id),
+        std::env::args().next().as_deref(),
+    );
+    let mut effective_prompt = prompt.clone();
+    effective_prompt.input = input;
+    effective_prompt
+}
+
+fn prompt_input_with_live_shadow_memory_for_program_name(
+    input: &[ResponseItem],
+    shadow_pack: &ShadowTurnMemoryPack,
+    memory_os_snapshot: Option<&MemoryOsSnapshot>,
+    turn_id: Option<&str>,
+    program_name: Option<&str>,
+) -> Vec<ResponseItem> {
+    if !should_enable_live_shadow_memory_for_program_name(program_name) {
+        return input.to_vec();
+    }
+    let Some(memory_item) =
+        live_shadow_memory_response_item(memory_os_snapshot, shadow_pack, turn_id, input)
+    else {
+        return input.to_vec();
+    };
+
+    let mut augmented = Vec::with_capacity(input.len().saturating_add(1));
+    augmented.extend_from_slice(input);
+    augmented.push(memory_item);
+    augmented
+}
+
+fn memory_os_brain_promotion_mode(
+    features: &ManagedFeatures,
+) -> crate::memory_os::BrainPromotionMode {
+    if features.enabled(Feature::MemoryOsBrainCandidates)
+        && features.enabled(Feature::MemoryOsLimitedPromotion)
+    {
+        crate::memory_os::BrainPromotionMode::LimitedCorroboratedPromotion
+    } else {
+        crate::memory_os::BrainPromotionMode::ShadowOnly
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemoryOsRuntimeBrainMode {
+    Noop,
+    Heuristic,
+    Remote,
+}
+
+fn memory_os_runtime_brain_mode(
+    features: &ManagedFeatures,
+    remote_brain_configured: bool,
+) -> MemoryOsRuntimeBrainMode {
+    if !features.enabled(Feature::MemoryOsBrainCandidates) {
+        MemoryOsRuntimeBrainMode::Noop
+    } else if remote_brain_configured {
+        MemoryOsRuntimeBrainMode::Remote
+    } else {
+        MemoryOsRuntimeBrainMode::Heuristic
+    }
+}
+
+fn sanitize_memory_os_snapshot_for_features(
+    snapshot: MemoryOsSnapshot,
+    features: &ManagedFeatures,
+) -> MemoryOsSnapshot {
+    if features.enabled(Feature::MemoryOsBrainCandidates) {
+        return snapshot;
+    }
+
+    let mut sanitized = snapshot;
+    sanitized.brain_shadow = crate::memory_os::BrainShadowState::default();
+    sanitized
+        .promotion_decisions
+        .retain(|decision| decision.origin != crate::memory_os::CandidateOrigin::BrainRxt);
+    sanitized
+}
+
+pub(super) fn should_enable_live_shadow_memory_for_program_name(
+    program_name: Option<&str>,
+) -> bool {
+    let Some(program_name) = program_name else {
+        return false;
+    };
+    Path::new(program_name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .is_some_and(|stem| stem == "ccodex")
+}
+
+fn live_shadow_memory_response_item(
+    memory_os_snapshot: Option<&MemoryOsSnapshot>,
+    shadow_pack: &ShadowTurnMemoryPack,
+    turn_id: Option<&str>,
+    _input: &[ResponseItem],
+) -> Option<ResponseItem> {
+    if let Some(snapshot) = memory_os_snapshot {
+        let instrumented_snapshot = instrument_memory_os_snapshot_for_prompt(snapshot.clone());
+        return crate::memory_os::assemble_memory_plane_context_item(&instrumented_snapshot);
+    }
+
+    let turn_id = turn_id?;
+    let mut sections = vec!["CANONICAL/1".to_string()];
+    if let Some(working_set) = bootstrap_working_set_section(shadow_pack) {
+        sections.push(working_set);
+    }
+    sections.push(format!("CUR|{turn_id}"));
+
+    Some(ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: format!(
+                "<memory_plane_context>\n{}\n</memory_plane_context>",
+                sections.join("\n")
+            ),
+        }],
+        end_turn: None,
+        phase: None,
+    })
+}
+
+fn bootstrap_working_set_section(shadow_pack: &ShadowTurnMemoryPack) -> Option<String> {
+    let mut next_steps = Vec::new();
+    let mut blockers = Vec::new();
+    let mut artifacts = Vec::new();
+
+    for line in shadow_pack.hot_working_set_text.lines().map(str::trim) {
+        if line.is_empty() || line == "HOT/1" {
+            continue;
+        }
+
+        if line.starts_with("NXT|") {
+            push_bootstrap_line(&mut next_steps, line, 2);
+        } else if line.starts_with("BLK|") {
+            push_bootstrap_line(&mut blockers, line, 2);
+        } else if line.starts_with("ART|") {
+            push_bootstrap_line(&mut artifacts, line, 3);
+        }
+    }
+
+    if next_steps.is_empty() && blockers.is_empty() && artifacts.is_empty() {
+        return None;
+    }
+
+    let mut lines = vec!["WRK/1".to_string()];
+    lines.extend(next_steps);
+    lines.extend(blockers);
+    lines.extend(artifacts);
+    Some(lines.join("\n"))
+}
+
+fn push_bootstrap_line(lines: &mut Vec<String>, line: &str, limit: usize) {
+    if lines.len() >= limit || lines.iter().any(|existing| existing == line) {
+        return;
+    }
+    lines.push(line.to_string());
+}
+
+const OBSERVATION_PROMPT_LIMIT: usize = 4;
+const PRAGMATIC_PROMPT_LIMIT: usize = 4;
+const RETRIEVAL_PROMPT_LIMIT: usize = 4;
+
+fn instrument_memory_os_snapshot_for_prompt(snapshot: MemoryOsSnapshot) -> MemoryOsSnapshot {
+    let mut instrumented = snapshot;
+    let mut traces = Vec::new();
+
+    append_canonical_injection_trace(&instrumented, &mut traces);
+    append_observation_injection_traces(&instrumented, &mut traces);
+    append_pragmatic_injection_traces(&instrumented, &mut traces);
+
+    let mut sanitized_retrievals = Vec::new();
+    for retrieval in instrumented.retrievals {
+        if retrieval.score.is_finite() {
+            let decision = if sanitized_retrievals.len() < RETRIEVAL_PROMPT_LIMIT {
+                InjectionDecision::Keep
+            } else {
+                InjectionDecision::Drop
+            };
+            let rationale = if matches!(decision, InjectionDecision::Keep) {
+                "selected for prompt context within retrieval trace limit"
+            } else {
+                "dropped from prompt context because retrieval trace limit was reached"
+            };
+            traces.push(injection_trace_record(
+                retrieval.memory_id.as_str(),
+                MemoryPlane::Retrieval,
+                decision,
+                rationale,
+                retrieval.source_refs.as_slice(),
+            ));
+            if matches!(decision, InjectionDecision::Keep) {
+                sanitized_retrievals.push(retrieval);
+            }
+        } else {
+            traces.push(injection_trace_record(
+                retrieval.memory_id.as_str(),
+                MemoryPlane::Retrieval,
+                InjectionDecision::Drop,
+                "dropped from prompt context because retrieval score was non-finite",
+                retrieval.source_refs.as_slice(),
+            ));
+            warn!(
+                memory_id = retrieval.memory_id.as_str(),
+                score = retrieval.score,
+                "dropping invalid retrieval explanation from ccodex prompt snapshot"
+            );
+        }
+    }
+
+    traces.sort_by(|left, right| {
+        memory_plane_rank(left.plane)
+            .cmp(&memory_plane_rank(right.plane))
+            .then_with(|| left.memory_id.cmp(&right.memory_id))
+            .then_with(|| {
+                injection_decision_rank(left.decision).cmp(&injection_decision_rank(right.decision))
+            })
+            .then_with(|| left.rationale.cmp(&right.rationale))
+    });
+
+    instrumented.retrievals = sanitized_retrievals;
+    instrumented.injection_traces = traces;
+    instrumented
+}
+
+fn append_canonical_injection_trace(
+    snapshot: &MemoryOsSnapshot,
+    traces: &mut Vec<InjectionTraceRecord>,
+) {
+    if !canonical_has_substantive_prompt_content(&snapshot.canonical) {
+        return;
+    }
+
+    let source_refs = snapshot
+        .canonical
+        .continuation_cursor
+        .as_ref()
+        .map_or_else(Vec::new, |cursor| vec![cursor.clone()]);
+    traces.push(injection_trace_record(
+        "canonical",
+        MemoryPlane::Canonical,
+        InjectionDecision::Keep,
+        "selected as durable authority for prompt context",
+        source_refs.as_slice(),
+    ));
+}
+
+fn canonical_has_substantive_prompt_content(canonical: &CanonicalStateRecord) -> bool {
+    canonical.objective.is_some()
+        || canonical.active_subgoal.is_some()
+        || !canonical.decision_ledger.is_empty()
+        || !canonical.attempt_ledger.is_empty()
+        || !canonical.outcome_ledger.is_empty()
+        || !canonical.next_steps.is_empty()
+        || !canonical.blockers.is_empty()
+        || !canonical.constraints.is_empty()
+        || !canonical.open_questions.is_empty()
+        || !canonical.active_files.is_empty()
+}
+
+fn append_observation_injection_traces(
+    snapshot: &MemoryOsSnapshot,
+    traces: &mut Vec<InjectionTraceRecord>,
+) {
+    for (index, observation) in snapshot.observations.iter().enumerate() {
+        let decision = if index < OBSERVATION_PROMPT_LIMIT {
+            InjectionDecision::Keep
+        } else {
+            InjectionDecision::Drop
+        };
+        let rationale = if matches!(decision, InjectionDecision::Keep) {
+            "selected for prompt context within section limit"
+        } else {
+            "dropped from prompt context because observational section limit was reached"
+        };
+        traces.push(injection_trace_record(
+            observation.turn_id.as_str(),
+            MemoryPlane::Observational,
+            decision,
+            rationale,
+            observation.evidence_refs.as_slice(),
+        ));
+    }
+}
+
+fn append_pragmatic_injection_traces(
+    snapshot: &MemoryOsSnapshot,
+    traces: &mut Vec<InjectionTraceRecord>,
+) {
+    for (index, pragmatic) in snapshot.pragmatics.iter().enumerate() {
+        let decision = if index < PRAGMATIC_PROMPT_LIMIT {
+            InjectionDecision::Keep
+        } else {
+            InjectionDecision::Drop
+        };
+        let rationale = if matches!(decision, InjectionDecision::Keep) {
+            "selected for prompt context within section limit"
+        } else {
+            "dropped from prompt context because pragmatic section limit was reached"
+        };
+        traces.push(injection_trace_record(
+            pragmatic.inference_id.as_str(),
+            MemoryPlane::Pragmatic,
+            decision,
+            rationale,
+            pragmatic.derived_from.as_slice(),
+        ));
+    }
+}
+
+fn injection_trace_record(
+    memory_id: &str,
+    plane: MemoryPlane,
+    decision: InjectionDecision,
+    rationale: &str,
+    source_refs: &[String],
+) -> InjectionTraceRecord {
+    let mut source_refs = source_refs.to_vec();
+    source_refs.sort();
+    source_refs.dedup();
+    InjectionTraceRecord {
+        memory_id: memory_id.to_string(),
+        plane,
+        decision,
+        rationale: rationale.to_string(),
+        source_refs,
+    }
+}
+
+fn memory_plane_rank(plane: MemoryPlane) -> u8 {
+    match plane {
+        MemoryPlane::Canonical => 0,
+        MemoryPlane::Observational => 1,
+        MemoryPlane::Episodic => 2,
+        MemoryPlane::Pragmatic => 3,
+        MemoryPlane::Retrieval => 4,
+    }
+}
+
+fn injection_decision_rank(decision: InjectionDecision) -> u8 {
+    match decision {
+        InjectionDecision::Keep => 0,
+        InjectionDecision::Drop => 1,
+    }
+}
+
+fn emit_memory_os_observability_metrics(sess: &Session, snapshot: &MemoryOsSnapshot) {
+    let keep_count = snapshot
+        .injection_traces
+        .iter()
+        .filter(|trace| matches!(trace.decision, InjectionDecision::Keep))
+        .count() as i64;
+    let drop_count = snapshot
+        .injection_traces
+        .iter()
+        .filter(|trace| matches!(trace.decision, InjectionDecision::Drop))
+        .count() as i64;
+    let retrieval_failure_count = snapshot
+        .injection_traces
+        .iter()
+        .filter(|trace| {
+            trace.plane == MemoryPlane::Retrieval
+                && matches!(trace.decision, InjectionDecision::Drop)
+                && trace.rationale.contains("non-finite")
+        })
+        .count() as i64;
+
+    sess.services.otel_manager.counter(
+        "codex.memory_os.injection.keep",
+        keep_count,
+        &[("program", "ccodex")],
+    );
+    sess.services.otel_manager.counter(
+        "codex.memory_os.injection.drop",
+        drop_count,
+        &[("program", "ccodex")],
+    );
+    if retrieval_failure_count > 0 {
+        sess.services.otel_manager.counter(
+            "codex.memory_os.retrieval_failure",
+            retrieval_failure_count,
+            &[("program", "ccodex")],
+        );
+    }
+    debug!(
+        keep_count,
+        drop_count, retrieval_failure_count, "recorded ccodex memory os injection observability"
+    );
+}
+
+async fn emit_post_turn_memory_os_snapshot_event(
+    sess: &Session,
+    turn_context: &TurnContext,
+    snapshot: &MemoryOsSnapshot,
+) {
+    if snapshot.is_empty() {
+        return;
+    }
+    if let Ok(serialized) = serialize_memory_os_snapshot(snapshot) {
+        sess.notify_background_event(turn_context, format!("memory_os_snapshot:{serialized}"))
+            .await;
+    }
+}
+
+fn serialize_memory_os_snapshot(snapshot: &MemoryOsSnapshot) -> Result<String, serde_json::Error> {
+    serde_json::to_string(&PersistedMemoryOsSnapshot {
+        schema_version: MEMORY_OS_SNAPSHOT_SCHEMA_VERSION,
+        snapshot,
+    })
+}
+
+fn parse_memory_os_snapshot_payload(payload: &str) -> Option<MemoryOsSnapshot> {
+    let parsed = serde_json::from_str::<ParsedMemoryOsSnapshot>(payload).ok()?;
+    if parsed.schema_version > MEMORY_OS_SNAPSHOT_SCHEMA_VERSION {
+        return None;
+    }
+    Some(parsed.snapshot)
+}
+
+fn user_query_from_input(input: &[ResponseItem]) -> String {
+    input
+        .iter()
+        .rev()
+        .filter_map(|item| match item {
+            ResponseItem::Message { role, content, .. } if role == "user" => {
+                let text = content
+                    .iter()
+                    .filter_map(|item| match item {
+                        codex_protocol::models::ContentItem::InputText { text } => {
+                            Some(text.as_str())
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join(
+                        "
+",
+                    );
+                (!text.trim().is_empty()).then_some(text)
+            }
+            _ => None,
+        })
+        .find(|text| !looks_like_injected_user_instruction(text))
+        .unwrap_or_default()
+}
+
+fn looks_like_injected_user_instruction(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.starts_with("# AGENTS.md instructions for ")
+        || trimmed.starts_with("<permissions instructions>")
+        || trimmed.starts_with("<collaboration_mode>")
+        || trimmed.contains("The writable roots are")
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TurnPackingShadowMetrics {
+    base_tokens: usize,
+    input_tokens: usize,
+    tools_tokens: usize,
+    output_schema_tokens: usize,
+    stable_ledger_tokens: usize,
+    hot_working_set_tokens: usize,
+    recall_annex_tokens: usize,
+    total_tokens: usize,
+    input_items: usize,
+    tool_count: usize,
+    fallback_compact_invoked: bool,
+}
+
+impl TurnPackingShadowMetrics {
+    fn from_prompt(
+        prompt: &Prompt,
+        shadow_pack: &ShadowTurnMemoryPack,
+        fallback_compact_invoked: bool,
+    ) -> Self {
+        let base_tokens = approx_token_count(&prompt.base_instructions.text);
+        let formatted_input = prompt.get_formatted_input();
+        let input_tokens = serde_json::to_string(&formatted_input)
+            .ok()
+            .map(|json| approx_token_count(&json))
+            .unwrap_or(0);
+        let tools_tokens = serde_json::to_string(&prompt.tools)
+            .ok()
+            .map(|json| approx_token_count(&json))
+            .unwrap_or(0);
+        let output_schema_tokens = prompt
+            .output_schema
+            .as_ref()
+            .map(|schema| approx_token_count(&schema.to_string()))
+            .unwrap_or(0);
+        let stable_ledger_tokens = approx_token_count(&shadow_pack.stable_ledger_text);
+        let hot_working_set_tokens = approx_token_count(&shadow_pack.hot_working_set_text);
+        let recall_annex_tokens = approx_token_count(&shadow_pack.recall_annex_text);
+        let total_tokens = base_tokens
+            .saturating_add(input_tokens)
+            .saturating_add(tools_tokens)
+            .saturating_add(output_schema_tokens)
+            .saturating_add(stable_ledger_tokens)
+            .saturating_add(hot_working_set_tokens)
+            .saturating_add(recall_annex_tokens);
+
+        Self {
+            base_tokens,
+            input_tokens,
+            tools_tokens,
+            output_schema_tokens,
+            stable_ledger_tokens,
+            hot_working_set_tokens,
+            recall_annex_tokens,
+            total_tokens,
+            input_items: formatted_input.len(),
+            tool_count: prompt.tools.len(),
+            fallback_compact_invoked,
+        }
+    }
+
+    fn to_background_message(self) -> String {
+        format!(
+            concat!(
+                "turn_packing_shadow:",
+                "v=1 ",
+                "base_tokens={} ",
+                "input_tokens={} ",
+                "tools_tokens={} ",
+                "output_schema_tokens={} ",
+                "stable_ledger_tokens={} ",
+                "hot_working_set_tokens={} ",
+                "recall_annex_tokens={} ",
+                "total_tokens={} ",
+                "input_items={} ",
+                "tool_count={} ",
+                "fallback_compact_invoked={}"
+            ),
+            self.base_tokens,
+            self.input_tokens,
+            self.tools_tokens,
+            self.output_schema_tokens,
+            self.stable_ledger_tokens,
+            self.hot_working_set_tokens,
+            self.recall_annex_tokens,
+            self.total_tokens,
+            self.input_items,
+            self.tool_count,
+            self.fallback_compact_invoked,
+        )
+    }
+}
+
+async fn emit_turn_packing_shadow_event(
+    sess: &Session,
+    turn_context: &TurnContext,
+    prompt: &Prompt,
+    shadow_pack: &ShadowTurnMemoryPack,
+    fallback_compact_invoked: bool,
+) {
+    if !turn_context.features.enabled(Feature::RuntimeMetrics) {
+        return;
+    }
+
+    let metrics =
+        TurnPackingShadowMetrics::from_prompt(prompt, shadow_pack, fallback_compact_invoked);
+    sess.notify_background_event(turn_context, metrics.to_background_message())
+        .await;
 }
 
 pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -> Option<String> {

@@ -6,6 +6,9 @@ use codex_core::compact::SUMMARIZATION_PROMPT;
 use codex_core::compact::SUMMARY_PREFIX;
 use codex_core::config::Config;
 use codex_protocol::items::TurnItem;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::FunctionCallOutputPayload;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::protocol::AskForApproval;
@@ -30,6 +33,11 @@ use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use std::path::PathBuf;
 
+use codex_core::turn_memory::ArtifactRecord;
+use codex_core::turn_memory::EpisodicRecord;
+use codex_core::turn_memory::IdentifiedRecord;
+use codex_core::turn_memory::LinkedRecord;
+use codex_core::turn_memory::WorkingLedger;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_completed_with_tokens;
@@ -3351,4 +3359,721 @@ async fn snapshot_request_shape_manual_compact_without_previous_user_messages() 
             ]
         )
     );
+}
+
+#[test]
+fn working_ledger_serializes_to_ctx_v1() {
+    let ledger = WorkingLedger {
+        objective: Some("move Codex to per-turn memory architecture".to_string()),
+        constraints: vec![
+            "keep response_id continuity".to_string(),
+            "250k operating budget".to_string(),
+        ],
+        decisions: vec![IdentifiedRecord {
+            id: "D1".to_string(),
+            text: "native Codex thread semantics remain canonical".to_string(),
+        }],
+        rationales: vec![LinkedRecord {
+            id: "D1".to_string(),
+            text: "avoids proxy-local state drift".to_string(),
+            failure_class: None,
+        }],
+        attempts: vec![IdentifiedRecord {
+            id: "T1".to_string(),
+            text: "disabled AG local compact live".to_string(),
+        }],
+        verified_successes: vec![LinkedRecord {
+            id: "T1".to_string(),
+            text: "service stable without local compaction logs".to_string(),
+            failure_class: None,
+        }],
+        verified_failures: vec![LinkedRecord {
+            id: "F1".to_string(),
+            text: "proxy-local compact caused repeated task restarts".to_string(),
+            failure_class: None,
+        }],
+        artifacts: vec![ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/compact_remote.rs".to_string(),
+        }],
+        blockers: vec!["need deterministic recall before rollout".to_string()],
+        next_step: Some("implement observer+ledger writer in shadow mode".to_string()),
+        narration: Vec::new(),
+    };
+
+    let expected = "CTX/1\nOBJ|move Codex to per-turn memory architecture\nCON|keep response_id continuity\nCON|250k operating budget\nDEC|D1|native Codex thread semantics remain canonical\nWHY|D1|avoids proxy-local state drift\nTRY|T1|disabled AG local compact live\nWIN|T1|service stable without local compaction logs\nFAIL|F1|proxy-local compact caused repeated task restarts\nART|A1|codex-rs/core/src/compact_remote.rs\nBLK|need deterministic recall before rollout\nNXT|implement observer+ledger writer in shadow mode";
+
+    assert_eq!(ledger.to_ctx_v1(), expected);
+}
+
+#[test]
+fn working_ledger_omits_narration_only_content() {
+    let ledger = WorkingLedger {
+        objective: None,
+        constraints: Vec::new(),
+        decisions: Vec::new(),
+        rationales: Vec::new(),
+        attempts: Vec::new(),
+        verified_successes: Vec::new(),
+        verified_failures: Vec::new(),
+        artifacts: Vec::new(),
+        blockers: Vec::new(),
+        next_step: None,
+        narration: vec![
+            "I am checking the repository layout now".to_string(),
+            "Next I will inspect the compact flow".to_string(),
+        ],
+    };
+
+    assert_eq!(ledger.to_ctx_v1(), "CTX/1");
+}
+
+#[test]
+fn working_ledger_compacts_whitespace_but_preserves_project_state() {
+    let ledger = WorkingLedger {
+        objective: Some(
+            "  stabilize   compaction-free continuation \n            across turns  ".to_string(),
+        ),
+        constraints: vec!["  keep   fallback compact during rollout  ".to_string()],
+        decisions: vec![IdentifiedRecord {
+            id: "D2".to_string(),
+            text: "  store   decisions, reasons, attempts, and failures  ".to_string(),
+        }],
+        rationales: vec![LinkedRecord {
+            id: "D2".to_string(),
+            text: "  continuation   quality depends on retained causal state ".to_string(),
+            failure_class: None,
+        }],
+        attempts: vec![IdentifiedRecord {
+            id: "T2".to_string(),
+            text: "  tested native shadow diagnostics first ".to_string(),
+        }],
+        verified_successes: vec![LinkedRecord {
+            id: "T2".to_string(),
+            text: "  focused runtime_metrics test passed ".to_string(),
+            failure_class: None,
+        }],
+        verified_failures: vec![LinkedRecord {
+            id: "T2".to_string(),
+            text: "  proxy-side compaction never informed Codex ".to_string(),
+            failure_class: None,
+        }],
+        artifacts: vec![ArtifactRecord {
+            id: Some("A2".to_string()),
+            text: "  codex-rs/core/src/codex.rs  ".to_string(),
+        }],
+        blockers: vec!["  need episodic extraction next ".to_string()],
+        next_step: Some("  add structured ledger module  ".to_string()),
+        narration: vec!["I am narrating progress and this should be dropped".to_string()],
+    };
+
+    let expected = "CTX/1\nOBJ|stabilize compaction-free continuation across turns\nCON|keep fallback compact during rollout\nDEC|D2|store decisions, reasons, attempts, and failures\nWHY|D2|continuation quality depends on retained causal state\nTRY|T2|tested native shadow diagnostics first\nWIN|T2|focused runtime_metrics test passed\nFAIL|T2|proxy-side compaction never informed Codex\nART|A2|codex-rs/core/src/codex.rs\nBLK|need episodic extraction next\nNXT|add structured ledger module";
+
+    assert_eq!(ledger.to_ctx_v1(), expected);
+}
+
+#[test]
+fn extract_episodic_records_captures_decisions_tool_successes_and_next_step() {
+    let items = vec![
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "Decision: keep native thread semantics\nWhy: avoids proxy drift\nBlocker: need deterministic recall\nNext: implement episodic extraction".to_string(),
+            }],
+            end_turn: Some(true),
+            phase: None,
+        },
+        ResponseItem::FunctionCall {
+            id: None,
+            name: "apply_patch".to_string(),
+            arguments: "{}".to_string(),
+            call_id: "call-1".to_string(),
+        },
+        ResponseItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: FunctionCallOutputPayload::from_text(
+                "Updated codex-rs/core/src/codex.rs successfully".to_string(),
+            ),
+        },
+    ];
+
+    let expected = vec![
+        EpisodicRecord::Decision(IdentifiedRecord {
+            id: "D1".to_string(),
+            text: "keep native thread semantics".to_string(),
+        }),
+        EpisodicRecord::Rationale(LinkedRecord {
+            id: "D1".to_string(),
+            text: "avoids proxy drift".to_string(),
+            failure_class: None,
+        }),
+        EpisodicRecord::Blocker("need deterministic recall".to_string()),
+        EpisodicRecord::NextStep("implement episodic extraction".to_string()),
+        EpisodicRecord::Attempt(IdentifiedRecord {
+            id: "call-1".to_string(),
+            text: "apply_patch".to_string(),
+        }),
+        EpisodicRecord::VerifiedSuccess(LinkedRecord {
+            id: "call-1".to_string(),
+            text: "Updated codex-rs/core/src/codex.rs successfully".to_string(),
+            failure_class: None,
+        }),
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/codex.rs".to_string(),
+        }),
+    ];
+
+    assert_eq!(
+        codex_core::turn_memory::extract_episodic_records(&items),
+        expected
+    );
+}
+
+#[test]
+fn extract_episodic_records_marks_failed_tool_outputs_and_collects_artifacts() {
+    let items = vec![
+        ResponseItem::FunctionCall {
+            id: None,
+            name: "shell".to_string(),
+            arguments: r#"{"command":["cargo","test"]}"#.to_string(),
+            call_id: "call-2".to_string(),
+        },
+        ResponseItem::FunctionCallOutput {
+            call_id: "call-2".to_string(),
+            output: FunctionCallOutputPayload::from_text(
+                "error: tests failed in core/tests/suite/compact.rs".to_string(),
+            ),
+        },
+    ];
+
+    let expected = vec![
+        EpisodicRecord::Attempt(IdentifiedRecord {
+            id: "call-2".to_string(),
+            text: "shell".to_string(),
+        }),
+        EpisodicRecord::VerifiedFailure(LinkedRecord {
+            id: "call-2".to_string(),
+            text: "error: tests failed in core/tests/suite/compact.rs".to_string(),
+            failure_class: None,
+        }),
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "core/tests/suite/compact.rs".to_string(),
+        }),
+    ];
+
+    assert_eq!(
+        codex_core::turn_memory::extract_episodic_records(&items),
+        expected
+    );
+}
+
+#[test]
+fn merge_episodic_records_updates_working_ledger_state() {
+    let ledger = WorkingLedger {
+        objective: Some("keep Codex continuation stable".to_string()),
+        constraints: vec!["keep response_id continuity".to_string()],
+        decisions: vec![IdentifiedRecord {
+            id: "D1".to_string(),
+            text: "preserve native thread semantics".to_string(),
+        }],
+        rationales: vec![LinkedRecord {
+            id: "D1".to_string(),
+            text: "prevents proxy-local drift".to_string(),
+            failure_class: None,
+        }],
+        attempts: vec![IdentifiedRecord {
+            id: "T1".to_string(),
+            text: "disabled proxy compaction".to_string(),
+        }],
+        verified_successes: vec![LinkedRecord {
+            id: "T1".to_string(),
+            text: "local compaction logs disappeared".to_string(),
+            failure_class: None,
+        }],
+        verified_failures: vec![],
+        artifacts: vec![ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "src-tauri/src/proxy/handlers/codex.rs".to_string(),
+        }],
+        blockers: vec!["need Codex-native memory path".to_string()],
+        next_step: Some("add structured ledger".to_string()),
+        narration: vec!["ignore this narration".to_string()],
+    };
+
+    let merged = codex_core::turn_memory::merge_episodic_records_into_ledger(
+        ledger,
+        &[
+            EpisodicRecord::Decision(IdentifiedRecord {
+                id: "D2".to_string(),
+                text: "maintain stable ledger plus episodic recall".to_string(),
+            }),
+            EpisodicRecord::Rationale(LinkedRecord {
+                id: "D2".to_string(),
+                text: "reduces repeated-plan regressions".to_string(),
+                failure_class: None,
+            }),
+            EpisodicRecord::Attempt(IdentifiedRecord {
+                id: "T2".to_string(),
+                text: "implemented runtime shadow metrics".to_string(),
+            }),
+            EpisodicRecord::VerifiedSuccess(LinkedRecord {
+                id: "T2".to_string(),
+                text: "focused runtime_metrics lifecycle test passed".to_string(),
+                failure_class: None,
+            }),
+            EpisodicRecord::VerifiedFailure(LinkedRecord {
+                id: "T3".to_string(),
+                text: "proxy-local compact repeated task one".to_string(),
+                failure_class: None,
+            }),
+            EpisodicRecord::ArtifactChange(ArtifactRecord {
+                id: Some("A2".to_string()),
+                text: "codex-rs/core/src/codex.rs".to_string(),
+            }),
+            EpisodicRecord::Blocker("need deterministic recall ranking".to_string()),
+            EpisodicRecord::NextStep("wire recall annex into turn packer".to_string()),
+        ],
+    );
+
+    let expected = WorkingLedger {
+        objective: Some("keep Codex continuation stable".to_string()),
+        constraints: vec!["keep response_id continuity".to_string()],
+        decisions: vec![
+            IdentifiedRecord {
+                id: "D1".to_string(),
+                text: "preserve native thread semantics".to_string(),
+            },
+            IdentifiedRecord {
+                id: "D2".to_string(),
+                text: "maintain stable ledger plus episodic recall".to_string(),
+            },
+        ],
+        rationales: vec![
+            LinkedRecord {
+                id: "D1".to_string(),
+                text: "prevents proxy-local drift".to_string(),
+                failure_class: None,
+            },
+            LinkedRecord {
+                id: "D2".to_string(),
+                text: "reduces repeated-plan regressions".to_string(),
+                failure_class: None,
+            },
+        ],
+        attempts: vec![
+            IdentifiedRecord {
+                id: "T1".to_string(),
+                text: "disabled proxy compaction".to_string(),
+            },
+            IdentifiedRecord {
+                id: "T2".to_string(),
+                text: "implemented runtime shadow metrics".to_string(),
+            },
+        ],
+        verified_successes: vec![
+            LinkedRecord {
+                id: "T1".to_string(),
+                text: "local compaction logs disappeared".to_string(),
+                failure_class: None,
+            },
+            LinkedRecord {
+                id: "T2".to_string(),
+                text: "focused runtime_metrics lifecycle test passed".to_string(),
+                failure_class: None,
+            },
+        ],
+        verified_failures: vec![LinkedRecord {
+            id: "T3".to_string(),
+            text: "proxy-local compact repeated task one".to_string(),
+            failure_class: None,
+        }],
+        artifacts: vec![
+            ArtifactRecord {
+                id: Some("A1".to_string()),
+                text: "src-tauri/src/proxy/handlers/codex.rs".to_string(),
+            },
+            ArtifactRecord {
+                id: Some("A2".to_string()),
+                text: "codex-rs/core/src/codex.rs".to_string(),
+            },
+        ],
+        blockers: vec![
+            "need Codex-native memory path".to_string(),
+            "need deterministic recall ranking".to_string(),
+        ],
+        next_step: Some("wire recall annex into turn packer".to_string()),
+        narration: Vec::new(),
+    };
+
+    assert_eq!(merged, expected);
+}
+
+#[test]
+fn merge_episodic_records_deduplicates_existing_entries() {
+    let ledger = WorkingLedger {
+        objective: None,
+        constraints: Vec::new(),
+        decisions: vec![IdentifiedRecord {
+            id: "D1".to_string(),
+            text: "keep native semantics".to_string(),
+        }],
+        rationales: vec![LinkedRecord {
+            id: "D1".to_string(),
+            text: "keep native semantics".to_string(),
+            failure_class: None,
+        }],
+        attempts: vec![IdentifiedRecord {
+            id: "T1".to_string(),
+            text: "shadow metrics".to_string(),
+        }],
+        verified_successes: vec![LinkedRecord {
+            id: "T1".to_string(),
+            text: "shadow metrics passed".to_string(),
+            failure_class: None,
+        }],
+        verified_failures: vec![LinkedRecord {
+            id: "T2".to_string(),
+            text: "old failure".to_string(),
+            failure_class: None,
+        }],
+        artifacts: vec![ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/codex.rs".to_string(),
+        }],
+        blockers: vec!["need recall".to_string()],
+        next_step: Some("add recall".to_string()),
+        narration: vec!["discard".to_string()],
+    };
+
+    let merged = codex_core::turn_memory::merge_episodic_records_into_ledger(
+        ledger,
+        &[
+            EpisodicRecord::Decision(IdentifiedRecord {
+                id: "D1".to_string(),
+                text: "keep native semantics".to_string(),
+            }),
+            EpisodicRecord::Attempt(IdentifiedRecord {
+                id: "T1".to_string(),
+                text: "shadow metrics".to_string(),
+            }),
+            EpisodicRecord::VerifiedSuccess(LinkedRecord {
+                id: "T1".to_string(),
+                text: "shadow metrics passed".to_string(),
+                failure_class: None,
+            }),
+            EpisodicRecord::ArtifactChange(ArtifactRecord {
+                id: Some("A9".to_string()),
+                text: "codex-rs/core/src/codex.rs".to_string(),
+            }),
+            EpisodicRecord::Blocker("need recall".to_string()),
+            EpisodicRecord::NextStep("ship recall".to_string()),
+        ],
+    );
+
+    let expected = WorkingLedger {
+        objective: None,
+        constraints: Vec::new(),
+        decisions: vec![IdentifiedRecord {
+            id: "D1".to_string(),
+            text: "keep native semantics".to_string(),
+        }],
+        rationales: vec![LinkedRecord {
+            id: "D1".to_string(),
+            text: "keep native semantics".to_string(),
+            failure_class: None,
+        }],
+        attempts: vec![IdentifiedRecord {
+            id: "T1".to_string(),
+            text: "shadow metrics".to_string(),
+        }],
+        verified_successes: vec![LinkedRecord {
+            id: "T1".to_string(),
+            text: "shadow metrics passed".to_string(),
+            failure_class: None,
+        }],
+        verified_failures: vec![LinkedRecord {
+            id: "T2".to_string(),
+            text: "old failure".to_string(),
+            failure_class: None,
+        }],
+        artifacts: vec![ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/codex.rs".to_string(),
+        }],
+        blockers: vec!["need recall".to_string()],
+        next_step: Some("ship recall".to_string()),
+        narration: Vec::new(),
+    };
+
+    assert_eq!(merged, expected);
+}
+
+#[test]
+fn select_recall_annex_prioritizes_file_overlap_failures_and_next_step() {
+    let records = vec![
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/codex.rs".to_string(),
+        }),
+        EpisodicRecord::VerifiedFailure(LinkedRecord {
+            id: "T3".to_string(),
+            text: "codex-rs/core/src/codex.rs repeated task one after compact".to_string(),
+            failure_class: None,
+        }),
+        EpisodicRecord::Decision(IdentifiedRecord {
+            id: "D1".to_string(),
+            text: "keep native thread semantics".to_string(),
+        }),
+        EpisodicRecord::NextStep("wire recall annex into codex-rs/core/src/codex.rs".to_string()),
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A2".to_string()),
+            text: "docs/notes.md".to_string(),
+        }),
+        EpisodicRecord::VerifiedSuccess(LinkedRecord {
+            id: "T8".to_string(),
+            text: "updated docs/notes.md successfully".to_string(),
+            failure_class: None,
+        }),
+    ];
+
+    let selected = codex_core::memory_recall::select_recall_annex(
+        &records,
+        "fix looping in codex-rs/core/src/codex.rs after compact",
+        3,
+    );
+
+    let expected = vec![
+        EpisodicRecord::VerifiedFailure(LinkedRecord {
+            id: "T3".to_string(),
+            text: "codex-rs/core/src/codex.rs repeated task one after compact".to_string(),
+            failure_class: None,
+        }),
+        EpisodicRecord::NextStep("wire recall annex into codex-rs/core/src/codex.rs".to_string()),
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/codex.rs".to_string(),
+        }),
+    ];
+
+    assert_eq!(selected, expected);
+}
+
+#[test]
+fn select_recall_annex_deduplicates_equivalent_records_and_honors_limit() {
+    let records = vec![
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/turn_memory.rs".to_string(),
+        }),
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A9".to_string()),
+            text: "codex-rs/core/src/turn_memory.rs".to_string(),
+        }),
+        EpisodicRecord::Decision(IdentifiedRecord {
+            id: "D2".to_string(),
+            text: "store decisions and failures".to_string(),
+        }),
+        EpisodicRecord::Decision(IdentifiedRecord {
+            id: "D2".to_string(),
+            text: "store decisions and failures".to_string(),
+        }),
+        EpisodicRecord::VerifiedSuccess(LinkedRecord {
+            id: "T2".to_string(),
+            text: "turn_memory.rs serializer tests passed".to_string(),
+            failure_class: None,
+        }),
+    ];
+
+    let selected = codex_core::memory_recall::select_recall_annex(
+        &records,
+        "work on turn_memory.rs serializer",
+        2,
+    );
+
+    let expected = vec![
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/turn_memory.rs".to_string(),
+        }),
+        EpisodicRecord::VerifiedSuccess(LinkedRecord {
+            id: "T2".to_string(),
+            text: "turn_memory.rs serializer tests passed".to_string(),
+            failure_class: None,
+        }),
+    ];
+
+    assert_eq!(selected, expected);
+}
+
+#[test]
+fn select_hot_working_set_prioritizes_next_step_blockers_and_failures() {
+    let ledger = WorkingLedger {
+        decisions: vec![IdentifiedRecord {
+            id: "D1".to_string(),
+            text: "keep native thread semantics".to_string(),
+        }],
+        verified_failures: vec![LinkedRecord {
+            id: "T1".to_string(),
+            text: "codex-rs/core/src/codex.rs repeated task one after compact".to_string(),
+            failure_class: None,
+        }],
+        artifacts: vec![ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/codex.rs".to_string(),
+        }],
+        blockers: vec!["need resume continuity".to_string()],
+        next_step: Some("wire recall annex into codex-rs/core/src/codex.rs".to_string()),
+        ..WorkingLedger::default()
+    };
+
+    let selected = codex_core::hot_working_set::select_hot_working_set(&ledger, 4);
+
+    let expected = vec![
+        EpisodicRecord::NextStep("wire recall annex into codex-rs/core/src/codex.rs".to_string()),
+        EpisodicRecord::Blocker("need resume continuity".to_string()),
+        EpisodicRecord::VerifiedFailure(LinkedRecord {
+            id: "T1".to_string(),
+            text: "codex-rs/core/src/codex.rs repeated task one after compact".to_string(),
+            failure_class: None,
+        }),
+        EpisodicRecord::ArtifactChange(ArtifactRecord {
+            id: Some("A1".to_string()),
+            text: "codex-rs/core/src/codex.rs".to_string(),
+        }),
+    ];
+
+    assert_eq!(selected, expected);
+}
+
+#[test]
+fn select_hot_working_set_deduplicates_and_honors_limit() {
+    let ledger = WorkingLedger {
+        blockers: vec!["need recall".to_string(), "need recall".to_string()],
+        verified_failures: vec![
+            LinkedRecord {
+                id: "T1".to_string(),
+                text: "turn failed".to_string(),
+                failure_class: None,
+            },
+            LinkedRecord {
+                id: "T1".to_string(),
+                text: "turn failed".to_string(),
+                failure_class: None,
+            },
+        ],
+        next_step: Some("ship recall".to_string()),
+        ..WorkingLedger::default()
+    };
+
+    let selected = codex_core::hot_working_set::select_hot_working_set(&ledger, 3);
+
+    let expected = vec![
+        EpisodicRecord::NextStep("ship recall".to_string()),
+        EpisodicRecord::Blocker("need recall".to_string()),
+        EpisodicRecord::VerifiedFailure(LinkedRecord {
+            id: "T1".to_string(),
+            text: "turn failed".to_string(),
+            failure_class: None,
+        }),
+    ];
+
+    assert_eq!(selected, expected);
+}
+
+#[test]
+fn rebuild_working_ledger_from_items_recovers_shadow_memory_from_history() {
+    let items = vec![
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "Decision: maintain stable ledger
+Why: avoids repeated task restarts
+Next: wire recall annex"
+                    .to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+        ResponseItem::FunctionCall {
+            id: None,
+            call_id: "call-1".to_string(),
+            name: "shell".to_string(),
+            arguments: "{}".to_string(),
+        },
+        ResponseItem::FunctionCallOutput {
+            call_id: "call-1".to_string(),
+            output: FunctionCallOutputPayload::from_text("failed after compact".to_string()),
+        },
+    ];
+
+    let rebuilt = codex_core::turn_memory::rebuild_working_ledger_from_items(&items);
+
+    let expected = WorkingLedger {
+        objective: None,
+        constraints: vec![],
+        decisions: vec![IdentifiedRecord {
+            id: "D1".to_string(),
+            text: "maintain stable ledger".to_string(),
+        }],
+        rationales: vec![LinkedRecord {
+            id: "D1".to_string(),
+            text: "avoids repeated task restarts".to_string(),
+            failure_class: None,
+        }],
+        attempts: vec![IdentifiedRecord {
+            id: "call-1".to_string(),
+            text: "shell".to_string(),
+        }],
+        verified_successes: vec![],
+        verified_failures: vec![LinkedRecord {
+            id: "call-1".to_string(),
+            text: "failed after compact".to_string(),
+            failure_class: None,
+        }],
+        artifacts: vec![],
+        blockers: vec![],
+        next_step: Some("wire recall annex".to_string()),
+        narration: vec![],
+    };
+
+    assert_eq!(rebuilt, expected);
+}
+
+#[test]
+fn select_hot_working_set_cools_off_resolved_failures() {
+    let ledger = WorkingLedger {
+        attempts: vec![IdentifiedRecord {
+            id: "call-1".to_string(),
+            text: "shell".to_string(),
+        }],
+        verified_failures: vec![LinkedRecord {
+            id: "call-1".to_string(),
+            text: "shell failed".to_string(),
+            failure_class: None,
+        }],
+        verified_successes: vec![LinkedRecord {
+            id: "call-1".to_string(),
+            text: "shell succeeded".to_string(),
+            failure_class: None,
+        }],
+        next_step: Some("ship fix".to_string()),
+        ..WorkingLedger::default()
+    };
+
+    let selected = codex_core::hot_working_set::select_hot_working_set(&ledger, 3);
+
+    let expected = vec![
+        EpisodicRecord::NextStep("ship fix".to_string()),
+        EpisodicRecord::VerifiedSuccess(LinkedRecord {
+            id: "call-1".to_string(),
+            text: "shell succeeded".to_string(),
+            failure_class: None,
+        }),
+    ];
+
+    assert_eq!(selected, expected);
 }

@@ -1,0 +1,13 @@
+run_id: "20260307-183600"
+task_id: "ccodex-memory-os-08-observability"
+injections:
+  - id: "FI-OBS-001"
+    class: "overflow"
+    target: "observation section limit"
+    expected_detection: "overflow observations are rendered as structured DROP traces"
+    expected_recovery: "selected observations remain in prompt context and dropped overflow stays inspectable"
+  - id: "FI-OBS-002"
+    class: "malformed_output"
+    target: "retrieval explanation score"
+    expected_detection: "non-finite score is dropped and logged as a structured retrieval DROP trace"
+    expected_recovery: "canonical prompt context remains intact and retrieval trace text is excluded from prompt context"

@@ -44,6 +44,7 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::user_input::UserInput;
 use core_test_support::apps_test_server::AppsTestServer;
 use core_test_support::load_default_config_for_test;
+use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_message_item_added;
@@ -58,6 +59,7 @@ use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_match;
 use dunce::canonicalize as normalize_path;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
@@ -2452,6 +2454,216 @@ fn create_dummy_codex_auth() -> CodexAuth {
     CodexAuth::create_dummy_chatgpt_auth_for_testing()
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_metrics_emits_turn_packing_shadow_background_event() {
+    let server = MockServer::start().await;
+    let resp_mock = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-shadow"),
+            ev_message_item_added("msg-shadow", "shadow reply"),
+            ev_output_text_delta("shadow reply"),
+            ev_completed("resp-shadow"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_auth(CodexAuth::from_api_key("test"));
+    builder = builder.with_config(|config| {
+        config
+            .features
+            .enable(Feature::RuntimeMetrics)
+            .expect("test config should allow runtime metrics feature");
+    });
+    let codex = builder
+        .build(&server)
+        .await
+        .expect("create conversation")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "shadow metrics please".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await
+        .expect("submit turn");
+
+    let shadow_message = wait_for_event_match(&codex, |event| match event {
+        EventMsg::BackgroundEvent(payload)
+            if payload.message.starts_with("turn_packing_shadow:") =>
+        {
+            Some(payload.message.clone())
+        }
+        _ => None,
+    })
+    .await;
+
+    assert!(
+        shadow_message.contains("base_tokens="),
+        "missing base token count: {shadow_message}"
+    );
+    assert!(
+        shadow_message.contains("input_tokens="),
+        "missing input token count: {shadow_message}"
+    );
+    assert!(
+        shadow_message.contains("total_tokens="),
+        "missing total token count: {shadow_message}"
+    );
+    assert!(
+        shadow_message.contains("stable_ledger_tokens=0"),
+        "expected phase-1 ledger placeholder in: {shadow_message}"
+    );
+    assert!(
+        shadow_message.contains("recall_annex_tokens=0"),
+        "expected phase-1 recall placeholder in: {shadow_message}"
+    );
+    assert!(
+        shadow_message.contains("fallback_compact_invoked=false"),
+        "expected no compact fallback in: {shadow_message}"
+    );
+
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let request_body = resp_mock.single_request().body_json();
+    assert!(
+        request_body.to_string().contains("shadow metrics please"),
+        "expected request body to include user input: {request_body}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_metrics_emits_turn_memory_shadow_background_event() {
+    let server = MockServer::start().await;
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-memory-shadow"),
+            ev_assistant_message(
+                "msg-memory-shadow",
+                "Decision: keep native thread semantics\nWhy: avoids proxy drift\nNext: implement episodic extraction",
+            ),
+            ev_completed("resp-memory-shadow"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_auth(CodexAuth::from_api_key("test"));
+    builder = builder.with_config(|config| {
+        config
+            .features
+            .enable(Feature::RuntimeMetrics)
+            .expect("test config should allow runtime metrics feature");
+    });
+    let codex = builder
+        .build(&server)
+        .await
+        .expect("create conversation")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "extract memories".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await
+        .expect("submit turn");
+
+    let memory_event = wait_for_event_match(&codex, |event| match event {
+        EventMsg::BackgroundEvent(payload)
+            if payload.message.starts_with("turn_memory_shadow:") =>
+        {
+            Some(payload.message.clone())
+        }
+        _ => None,
+    })
+    .await;
+
+    assert!(
+        memory_event.contains("DEC|D1|keep native thread semantics"),
+        "missing decision shadow record: {memory_event}"
+    );
+
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_metrics_emits_turn_ledger_shadow_background_event() {
+    let server = MockServer::start().await;
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-ledger-shadow"),
+            ev_assistant_message(
+                "msg-ledger-shadow",
+                "Decision: maintain stable ledger\nWhy: avoids repeated task restarts\nNext: add recall annex",
+            ),
+            ev_completed("resp-ledger-shadow"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_auth(CodexAuth::from_api_key("test"));
+    builder = builder.with_config(|config| {
+        config
+            .features
+            .enable(Feature::RuntimeMetrics)
+            .expect("test config should allow runtime metrics feature");
+    });
+    let codex = builder
+        .build(&server)
+        .await
+        .expect("create conversation")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "ledger please".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await
+        .expect("submit turn");
+
+    let ledger_event = wait_for_event_match(&codex, |event| match event {
+        EventMsg::BackgroundEvent(payload)
+            if payload.message.starts_with("turn_ledger_shadow:") =>
+        {
+            Some(payload.message.clone())
+        }
+        _ => None,
+    })
+    .await;
+
+    assert!(
+        ledger_event.contains("CTX/1"),
+        "missing ledger header: {ledger_event}"
+    );
+    assert!(
+        ledger_event.contains("DEC|D1|maintain stable ledger"),
+        "missing merged decision: {ledger_event}"
+    );
+    assert!(
+        ledger_event.contains("WHY|D1|avoids repeated task restarts"),
+        "missing merged rationale: {ledger_event}"
+    );
+    assert!(
+        ledger_event.contains("NXT|add recall annex"),
+        "missing merged next step: {ledger_event}"
+    );
+
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+}
+
 /// Scenario:
 /// - Turn 1: user sends U1; model streams deltas then a final assistant message A.
 /// - Turn 2: user sends U2; model streams a delta then the same final assistant message A.
@@ -2583,4 +2795,252 @@ async fn history_dedupes_streamed_and_final_messages_across_turns() {
         r3_tail_expected,
         "request 3 tail mismatch",
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_metrics_does_not_emit_legacy_cognition_or_memory_frame_background_events() {
+    let server = MockServer::start().await;
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-memory-frame-1"),
+            ev_assistant_message(
+                "msg-memory-frame-1",
+                "Objective: finish the memory patch
+Decision: persist inspectable memory frames
+Why: saved sessions need actual memory
+Failure: session artifacts hid COG and MEM frames
+Next: add persisted rollout events in codex-rs/core/src/codex.rs",
+            ),
+            ev_completed("resp-memory-frame-1"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_auth(CodexAuth::from_api_key("test"));
+    builder = builder.with_config(|config| {
+        config
+            .features
+            .enable(Feature::RuntimeMetrics)
+            .expect("test config should allow runtime metrics feature");
+    });
+    let codex = builder
+        .build(&server)
+        .await
+        .expect("create conversation")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "seed memory".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await
+        .expect("submit seed turn");
+
+    let mut background_messages = Vec::new();
+    loop {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(10), codex.next_event())
+            .await
+            .expect("timeout waiting for event")
+            .expect("stream ended unexpectedly");
+        match event.msg {
+            EventMsg::BackgroundEvent(payload) => {
+                background_messages.push(payload.message);
+            }
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
+        }
+    }
+
+    let ledger_event = background_messages
+        .iter()
+        .find(|message| message.starts_with("turn_ledger_shadow:"))
+        .expect("expected turn_ledger_shadow runtime metric");
+    let memory_events = background_messages
+        .iter()
+        .filter(|message| message.starts_with("turn_memory_shadow:"))
+        .collect::<Vec<_>>();
+    assert!(
+        !memory_events.is_empty(),
+        "expected turn_memory_shadow runtime metric"
+    );
+
+    assert!(
+        ledger_event.contains("CTX/1"),
+        "missing ledger header: {ledger_event}"
+    );
+    assert!(
+        ledger_event.contains("OBJ|finish the memory patch"),
+        "missing ledger objective: {ledger_event}"
+    );
+    assert!(
+        ledger_event.contains("DEC|D1|persist inspectable memory frames"),
+        "missing ledger decision: {ledger_event}"
+    );
+    assert!(
+        ledger_event.contains("FAIL|D1|session artifacts hid COG and MEM frames"),
+        "missing ledger failure: {ledger_event}"
+    );
+    assert!(
+        ledger_event.contains("NXT|add persisted rollout events in codex-rs/core/src/codex.rs"),
+        "missing ledger next step: {ledger_event}"
+    );
+    assert!(
+        memory_events
+            .iter()
+            .any(|message| message.contains("FAIL|D1|session artifacts hid COG and MEM frames")),
+        "missing memory shadow failure: {memory_events:?}"
+    );
+    assert!(
+        background_messages
+            .iter()
+            .all(|message| !message.starts_with("turn_cognition_shadow:")),
+        "legacy cognition shadow unexpectedly emitted: {background_messages:?}"
+    );
+    assert!(
+        background_messages
+            .iter()
+            .all(|message| !message.starts_with("turn_memory_frame:")),
+        "legacy memory frame unexpectedly emitted: {background_messages:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_metrics_emits_turn_recall_annex_and_hotset_shadow_background_events() {
+    let server = MockServer::start().await;
+    mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-shadow-1"),
+                ev_assistant_message(
+                    "msg-shadow-1",
+                    "Decision: maintain stable ledger
+Why: avoids repeated task restarts
+codex-rs/core/src/codex.rs failed after compact
+Next: wire recall annex into codex-rs/core/src/codex.rs",
+                ),
+                ev_completed("resp-shadow-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-shadow-2"),
+                ev_assistant_message("msg-shadow-2", "shadow follow-up"),
+                ev_completed("resp-shadow-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    let mut builder = test_codex().with_auth(CodexAuth::from_api_key("test"));
+    builder = builder.with_config(|config| {
+        config
+            .features
+            .enable(Feature::RuntimeMetrics)
+            .expect("test config should allow runtime metrics feature");
+    });
+    let codex = builder
+        .build(&server)
+        .await
+        .expect("create conversation")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "seed ledger".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await
+        .expect("submit seed turn");
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "fix looping in codex-rs/core/src/codex.rs after compact".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await
+        .expect("submit recall turn");
+
+    let hotset_event = wait_for_event_match(&codex, |event| match event {
+        EventMsg::BackgroundEvent(payload)
+            if payload.message.starts_with("turn_hotset_shadow:") =>
+        {
+            Some(payload.message.clone())
+        }
+        _ => None,
+    })
+    .await;
+
+    let recall_event = wait_for_event_match(&codex, |event| match event {
+        EventMsg::BackgroundEvent(payload)
+            if payload.message.starts_with("turn_recall_annex_shadow:") =>
+        {
+            Some(payload.message.clone())
+        }
+        _ => None,
+    })
+    .await;
+
+    let packing_event = wait_for_event_match(&codex, |event| match event {
+        EventMsg::BackgroundEvent(payload)
+            if payload.message.starts_with("turn_packing_shadow:") =>
+        {
+            Some(payload.message.clone())
+        }
+        _ => None,
+    })
+    .await;
+
+    assert!(
+        hotset_event.contains("HOT/1"),
+        "missing hot-set header: {hotset_event}"
+    );
+    assert!(
+        hotset_event.contains("NXT|wire recall annex into codex-rs/core/src/codex.rs"),
+        "missing hot-set next step: {hotset_event}"
+    );
+    assert!(
+        recall_event.contains("RCL/1"),
+        "missing recall header: {recall_event}"
+    );
+    assert!(
+        recall_event.contains("codex-rs/core/src/codex.rs"),
+        "missing file-focused recall: {recall_event}"
+    );
+    assert!(
+        packing_event.contains("stable_ledger_tokens="),
+        "missing ledger token accounting: {packing_event}"
+    );
+    assert!(
+        !packing_event.contains("stable_ledger_tokens=0"),
+        "expected non-zero ledger token accounting: {packing_event}"
+    );
+    assert!(
+        packing_event.contains("hot_working_set_tokens="),
+        "missing hot-set token accounting: {packing_event}"
+    );
+    assert!(
+        !packing_event.contains("hot_working_set_tokens=0"),
+        "expected non-zero hot-set token accounting: {packing_event}"
+    );
+    assert!(
+        packing_event.contains("recall_annex_tokens="),
+        "missing recall token accounting: {packing_event}"
+    );
+    assert!(
+        !packing_event.contains("recall_annex_tokens=0"),
+        "expected non-zero recall token accounting: {packing_event}"
+    );
+
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 }

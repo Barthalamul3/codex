@@ -8,6 +8,7 @@ use codex_protocol::openai_models::ModelInfo;
 use codex_state::Phase2InputSelection;
 use codex_state::Stage1Output;
 use codex_state::Stage1OutputRef;
+use std::collections::HashSet;
 use std::path::Path;
 use tokio::fs;
 use tracing::warn;
@@ -163,6 +164,7 @@ pub(crate) async fn build_memory_tool_developer_instructions(codex_home: &Path) 
         .ok()?
         .trim()
         .to_string();
+    let memory_summary = normalize_memory_summary_for_prompt(&memory_summary);
     let memory_summary = truncate_text(
         &memory_summary,
         TruncationPolicy::Tokens(phase_one::MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_SUMMARY_TOKEN_LIMIT),
@@ -178,10 +180,87 @@ pub(crate) async fn build_memory_tool_developer_instructions(codex_home: &Path) 
     template.render().ok()
 }
 
+fn normalize_memory_summary_for_prompt(summary: &str) -> String {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+    let mut previous_was_blank = true;
+    let mut in_recap_section = false;
+
+    for raw_line in summary.lines() {
+        let line = rewrite_memory_summary_line_for_prompt(raw_line.trim());
+        if line == "## What's in Memory" {
+            in_recap_section = true;
+            continue;
+        }
+        if line.starts_with("## ") {
+            in_recap_section = false;
+        }
+        if in_recap_section {
+            continue;
+        }
+        if line.is_empty() {
+            if !previous_was_blank {
+                normalized.push(String::new());
+                previous_was_blank = true;
+            }
+            continue;
+        }
+
+        if should_drop_memory_summary_line(&line) {
+            continue;
+        }
+
+        let dedupe_key = dedupe_key_for_memory_summary_line(&line);
+        if let Some(key) = dedupe_key
+            && !seen.insert(key)
+        {
+            continue;
+        }
+
+        normalized.push(line.to_string());
+        previous_was_blank = false;
+    }
+
+    while normalized.last().is_some_and(String::is_empty) {
+        normalized.pop();
+    }
+
+    normalized.join("\n")
+}
+
+fn rewrite_memory_summary_line_for_prompt(line: &str) -> String {
+    if line.starts_with("- Memory-OS context quality scoring and retrieval hygiene:") {
+        return "- Memory-OS context quality review playbook: score utility separately from efficiency; prioritize dedupe, lane separation, and fact-evidence-expiry normalization.".to_string();
+    }
+
+    line.to_string()
+}
+
+fn should_drop_memory_summary_line(line: &str) -> bool {
+    line.starts_with("- desc:")
+        || line.starts_with("- learnings:")
+        || line.contains("rollout_summary_file=")
+        || line.contains("rollout_path=")
+        || line.contains("thread_id=")
+        || line.contains("updated_at=")
+        || line.contains("/proc/<pid>/exe")
+        || line.contains("sha256sum")
+        || line.contains("ccodex exec --json")
+        || line.contains("factual utility ")
+        || line.contains("efficiency ")
+        || line.contains("analyze-context-window-memory-os")
+}
+
+fn dedupe_key_for_memory_summary_line(line: &str) -> Option<String> {
+    (!line.starts_with("### ")).then(|| line.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models_manager::model_info::model_info_from_slug;
+    use tempfile::tempdir;
+    use tokio::fs;
 
     #[test]
     fn build_stage_one_input_message_truncates_rollout_using_model_context_window() {
@@ -230,5 +309,255 @@ mod tests {
         .unwrap();
 
         assert!(message.contains(&expected_truncated));
+    }
+
+    #[test]
+    fn normalize_memory_summary_for_prompt_dedupes_repeated_lines_and_trims_detail_ballast() {
+        let summary = r#"
+## User Profile
+- They prioritize denoising memory context.
+- They prioritize denoising memory context.
+
+## General Tips
+- Memory-OS context quality scoring and retrieval hygiene: analyze-context-window-memory-os, factual utility 8.1/10, efficiency 6.4/10, lane separation, deduplication
+
+## What's in Memory
+### 2026-03-10
+- desc: Structured workflow for auditing memory context quality and generating concrete remediation priorities.
+- learnings: Architecture signal can be strong while prompt efficiency is weak; lane separation plus dedupe yields the fastest quality gains.
+"#;
+
+        let normalized = normalize_memory_summary_for_prompt(summary);
+
+        assert_eq!(
+            normalized
+                .matches("- They prioritize denoising memory context.")
+                .count(),
+            1,
+            "exact repeated summary lines should be deduped: {normalized}"
+        );
+        assert!(
+            normalized.contains(
+                "- Memory-OS context quality review playbook: score utility separately from efficiency; prioritize dedupe, lane separation, and fact-evidence-expiry normalization."
+            ),
+            "top-level routing guidance should remain after scorecard compaction: {normalized}"
+        );
+        assert!(
+            !normalized.contains("factual utility 8.1/10"),
+            "historical scorecards should not remain in prompt summary: {normalized}"
+        );
+        assert!(
+            !normalized.contains("analyze-context-window-memory-os"),
+            "self-referential assessment labels should not remain in prompt summary: {normalized}"
+        );
+        assert!(
+            !normalized.contains("- desc: Structured workflow"),
+            "detail ballast should be trimmed from prompt summary: {normalized}"
+        );
+        assert!(
+            !normalized.contains("- learnings: Architecture signal"),
+            "detail ballast should be trimmed from prompt summary: {normalized}"
+        );
+    }
+
+    #[test]
+    fn normalize_memory_summary_for_prompt_drops_whats_in_memory_recap_sections() {
+        let summary = r#"
+## User Profile
+- They prefer evidence-first debugging.
+
+## Durable Facts
+- Snapshot-only continuity remains authoritative.
+
+## Authority Rules
+- Live filesystem/process/test evidence overrides memory.
+
+## What's in Memory
+### 2026-03-10
+- Runtime stale-session vs clean-runtime validation: ccodex exec --json, memory_plane_context NONE
+  - desc: Practical checks to distinguish real regressions from stale interactive-session residue.
+  - learnings: Fresh clean-room probes are the stop-rule proof.
+"#;
+
+        let normalized = normalize_memory_summary_for_prompt(summary);
+
+        assert!(
+            normalized.contains("## Durable Facts"),
+            "durable facts should remain prompt-eligible: {normalized}"
+        );
+        assert!(
+            normalized.contains("## Authority Rules"),
+            "authority rules should remain prompt-eligible: {normalized}"
+        );
+        assert!(
+            !normalized.contains("## What's in Memory"),
+            "dated recap sections should not remain prompt-eligible by default: {normalized}"
+        );
+        assert!(
+            !normalized.contains("### 2026-03-10"),
+            "dated recap headings should not remain prompt-eligible by default: {normalized}"
+        );
+        assert!(
+            !normalized.contains("Runtime stale-session vs clean-runtime validation"),
+            "topic recap bullets should not remain prompt-eligible by default: {normalized}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_memory_tool_developer_instructions_renders_compact_deduped_memory_contract() {
+        let dir = tempdir().expect("tempdir");
+        let codex_home = dir.path().join("codex-home");
+        let memories_root = codex_home.join("memories");
+        fs::create_dir_all(&memories_root)
+            .await
+            .expect("create memories root");
+        fs::write(
+            memories_root.join("memory_summary.md"),
+            r#"
+## User Profile
+- They prioritize denoising memory context.
+- They prioritize denoising memory context.
+
+## General Tips
+- Trust filesystem/tests/runtime evidence over memory.
+- Memory-OS context quality scoring and retrieval hygiene: analyze-context-window-memory-os, factual utility 8.1/10, efficiency 6.4/10, lane separation, deduplication
+
+## What's in Memory
+### 2026-03-10
+- desc: Structured workflow for auditing memory context quality and generating concrete remediation priorities.
+- learnings: Architecture signal can be strong while prompt efficiency is weak; lane separation plus dedupe yields the fastest quality gains.
+"#,
+        )
+        .await
+        .expect("write memory summary");
+
+        let prompt = build_memory_tool_developer_instructions(&codex_home)
+            .await
+            .expect("developer instructions");
+
+        assert_eq!(
+            prompt
+                .matches("- They prioritize denoising memory context.")
+                .count(),
+            1,
+            "duplicate memory summary lines should not consume prompt budget: {prompt}"
+        );
+        assert!(
+            prompt.contains("- Trust filesystem/tests/runtime evidence over memory."),
+            "durable heuristics should remain visible: {prompt}"
+        );
+        assert!(
+            prompt.contains(
+                "- Memory-OS context quality review playbook: score utility separately from efficiency; prioritize dedupe, lane separation, and fact-evidence-expiry normalization."
+            ),
+            "routing guidance should remain visible after scorecard compaction: {prompt}"
+        );
+        assert!(
+            !prompt.contains("factual utility 8.1/10"),
+            "historical scorecards should be removed from injected memory summary: {prompt}"
+        );
+        assert!(
+            !prompt.contains("analyze-context-window-memory-os"),
+            "self-evaluation residue should be removed from injected memory summary: {prompt}"
+        );
+        assert!(
+            !prompt.contains("- desc: Structured workflow"),
+            "rollout-style detail ballast should be trimmed from prompt instructions: {prompt}"
+        );
+        assert!(
+            !prompt.contains("- learnings: Architecture signal"),
+            "rollout-style detail ballast should be trimmed from prompt instructions: {prompt}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_memory_tool_developer_instructions_prefers_durable_lanes_over_recap_topics() {
+        let dir = tempdir().expect("tempdir");
+        let codex_home = dir.path().join("codex-home");
+        let memories_root = codex_home.join("memories");
+        fs::create_dir_all(&memories_root)
+            .await
+            .expect("create memories root");
+        fs::write(
+            memories_root.join("memory_summary.md"),
+            r#"
+## User Profile
+- They prefer evidence-first debugging.
+
+## Durable Facts
+- Snapshot-only continuity remains authoritative.
+
+## Authority Rules
+- Live filesystem/process/test evidence overrides memory.
+
+## What's in Memory
+### 2026-03-10
+- Runtime stale-session vs clean-runtime validation: ccodex exec --json, memory_plane_context NONE
+"#,
+        )
+        .await
+        .expect("write memory summary");
+
+        let prompt = build_memory_tool_developer_instructions(&codex_home)
+            .await
+            .expect("developer instructions");
+
+        assert!(
+            prompt.contains("## Durable Facts"),
+            "durable lanes should remain visible: {prompt}"
+        );
+        assert!(
+            prompt.contains("## Authority Rules"),
+            "authority lanes should remain visible: {prompt}"
+        );
+        assert!(
+            !prompt.contains("## What's in Memory"),
+            "dated recap sections should not be injected by default: {prompt}"
+        );
+        assert!(
+            !prompt.contains("### 2026-03-10"),
+            "dated recap headings should not be injected by default: {prompt}"
+        );
+        assert!(
+            !prompt.contains("Runtime stale-session vs clean-runtime validation"),
+            "topic recap bullets should not be injected by default: {prompt}"
+        );
+    }
+
+    #[test]
+    fn build_consolidation_prompt_requires_deduped_lane_separated_memory_summary_output() {
+        let prompt = build_consolidation_prompt(
+            Path::new("/tmp/memory-root"),
+            &Phase2InputSelection::default(),
+        );
+
+        assert!(
+            prompt.contains("Deduplicate exact repeated lines before writing it."),
+            "consolidation prompt should require exact-line dedupe for memory_summary.md: {prompt}"
+        );
+        assert!(
+            prompt.contains("keep durable architecture facts and stable verification"),
+            "consolidation prompt should require lane prioritization for memory_summary.md: {prompt}"
+        );
+        assert!(
+            prompt.contains("demote transient rollout history and procedural ballast"),
+            "consolidation prompt should explicitly demote transient rollout detail: {prompt}"
+        );
+        assert!(
+            prompt.contains("Do not preserve historical scorecards or self-evaluation prose"),
+            "consolidation prompt should demote self-referential assessment residue: {prompt}"
+        );
+        assert!(
+            prompt.contains("Do not preserve dated recap sections like `## What's in Memory`"),
+            "consolidation prompt should demote dated recap sections from prompt-facing memory: {prompt}"
+        );
+        assert!(
+            prompt.contains("Lane objective for `MEMORY.md`: keep durable facts, operating heuristics, and historical"),
+            "consolidation prompt should require lane separation inside MEMORY.md, not only memory_summary.md: {prompt}"
+        );
+        assert!(
+            prompt.contains("Historical observations should stay short, explicitly dated, and never replace durable facts"),
+            "consolidation prompt should demote historical observations beneath durable facts in MEMORY.md: {prompt}"
+        );
     }
 }

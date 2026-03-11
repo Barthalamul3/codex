@@ -463,11 +463,10 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
     let _guard = tracing::dispatcher::set_default(&dispatch);
 
     test.submit_turn("run a shell command").await?;
-    {
-        let span = tracing::info_span!("test_log_span", thread_id = %expected_thread_id);
-        let _entered = span.enter();
-        tracing::info!("ToolCall: shell_command {{\"command\":\"echo hello\"}}");
-    }
+    tracing::info!(
+        thread_id = %expected_thread_id,
+        "ToolCall: shell_command {{\"command\":\"echo hello\"}}"
+    );
 
     let mut found = None;
     for _ in 0..80 {

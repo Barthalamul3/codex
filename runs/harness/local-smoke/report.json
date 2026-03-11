@@ -1,0 +1,39 @@
+{
+  "run_id": "local-smoke",
+  "status": "fail",
+  "results": [
+    {
+      "name": "format_check",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo fmt --all --check"
+      ],
+      "exit_code": 1,
+      "stdout_log": "runs/harness/local-smoke/logs/format_check.stdout.log",
+      "stderr_log": "runs/harness/local-smoke/logs/format_check.stderr.log"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "bash",
+        "-lc",
+        "cargo test -p codex-core --no-run"
+      ],
+      "exit_code": 101,
+      "stdout_log": "runs/harness/local-smoke/logs/typecheck.stdout.log",
+      "stderr_log": "runs/harness/local-smoke/logs/typecheck.stderr.log"
+    },
+    {
+      "name": "tests",
+      "command": [
+        "bash",
+        "-lc",
+        "cargo test -p codex-core live_shadow_memory reconstruct_history memory_os -- --nocapture"
+      ],
+      "exit_code": 1,
+      "stdout_log": "runs/harness/local-smoke/logs/tests.stdout.log",
+      "stderr_log": "runs/harness/local-smoke/logs/tests.stderr.log"
+    }
+  ]
+}

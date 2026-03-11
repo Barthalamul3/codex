@@ -1,0 +1,41 @@
+{
+  "run_id": "20260307-202711",
+  "task_id": "ccodex-memory-os-09-validation",
+  "profile": "ccodex-memory-os-09-validation",
+  "status": "pass",
+  "results": [
+    {
+      "name": "format_check",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo fmt --all --check"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-202711/logs/format_check.stdout.log",
+      "stderr_log": "runs/harness/20260307-202711/logs/format_check.stderr.log"
+    },
+    {
+      "name": "typecheck_core",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo test -p codex-core --no-run"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-202711/logs/typecheck_core.stdout.log",
+      "stderr_log": "runs/harness/20260307-202711/logs/typecheck_core.stderr.log"
+    },
+    {
+      "name": "tests_validation",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo test -p codex-core live_shadow_memory -- --nocapture && cargo test -p codex-core reconstruct_history -- --nocapture && cargo test -p codex-core memory_os -- --nocapture"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-202711/logs/tests_validation.stdout.log",
+      "stderr_log": "runs/harness/20260307-202711/logs/tests_validation.stderr.log"
+    }
+  ]
+}

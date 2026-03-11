@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::env;
 use std::future::Future;
+use std::io::ErrorKind;
 use std::time::Duration;
 
 use codex_api::RealtimeAudioFrame;
@@ -21,13 +23,17 @@ type RealtimeWsStream = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream
 
 async fn spawn_realtime_ws_server<Handler, Fut>(
     handler: Handler,
-) -> (String, tokio::task::JoinHandle<()>)
+) -> Option<(String, tokio::task::JoinHandle<()>)>
 where
     Handler: FnOnce(RealtimeWsStream) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
+        Err(err) if err.kind() == ErrorKind::PermissionDenied => {
+            eprintln!("skipping test: failed to bind test websocket listener: {err}");
+            return None;
+        }
         Err(err) => panic!("failed to bind test websocket listener: {err}"),
     };
     let addr = match listener.local_addr() {
@@ -47,7 +53,7 @@ where
         handler(ws).await;
     });
 
-    (addr, server)
+    Some((addr, server))
 }
 
 fn test_provider(base_url: String) -> Provider {
@@ -69,7 +75,12 @@ fn test_provider(base_url: String) -> Provider {
 
 #[tokio::test]
 async fn realtime_ws_e2e_session_create_and_event_flow() {
-    let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
+    if env::var("CODEX_SANDBOX_NETWORK_DISABLED").is_ok() {
+        println!("Skipping test because network is disabled in a Codex sandbox.");
+        return;
+    }
+
+    let Some((addr, server)) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
             .next()
             .await
@@ -130,7 +141,10 @@ async fn realtime_ws_e2e_session_create_and_event_flow() {
         .await
         .expect("send audio out");
     })
-    .await;
+    .await
+    else {
+        return;
+    };
 
     let client = RealtimeWebsocketClient::new(test_provider(format!("http://{addr}")));
     let connection = client
@@ -190,7 +204,12 @@ async fn realtime_ws_e2e_session_create_and_event_flow() {
 
 #[tokio::test]
 async fn realtime_ws_e2e_send_while_next_event_waits() {
-    let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
+    if env::var("CODEX_SANDBOX_NETWORK_DISABLED").is_ok() {
+        println!("Skipping test because network is disabled in a Codex sandbox.");
+        return;
+    }
+
+    let Some((addr, server)) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
             .next()
             .await
@@ -222,7 +241,10 @@ async fn realtime_ws_e2e_send_while_next_event_waits() {
         .await
         .expect("send session.updated");
     })
-    .await;
+    .await
+    else {
+        return;
+    };
 
     let client = RealtimeWebsocketClient::new(test_provider(format!("http://{addr}")));
     let connection = client
@@ -272,7 +294,7 @@ async fn realtime_ws_e2e_send_while_next_event_waits() {
 
 #[tokio::test]
 async fn realtime_ws_e2e_disconnected_emitted_once() {
-    let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
+    let Some((addr, server)) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
             .next()
             .await
@@ -285,7 +307,10 @@ async fn realtime_ws_e2e_disconnected_emitted_once() {
 
         ws.send(Message::Close(None)).await.expect("send close");
     })
-    .await;
+    .await
+    else {
+        return;
+    };
 
     let client = RealtimeWebsocketClient::new(test_provider(format!("http://{addr}")));
     let connection = client
@@ -312,7 +337,7 @@ async fn realtime_ws_e2e_disconnected_emitted_once() {
 
 #[tokio::test]
 async fn realtime_ws_e2e_ignores_unknown_text_events() {
-    let (addr, server) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
+    let Some((addr, server)) = spawn_realtime_ws_server(|mut ws: RealtimeWsStream| async move {
         let first = ws
             .next()
             .await
@@ -345,7 +370,10 @@ async fn realtime_ws_e2e_ignores_unknown_text_events() {
         .await
         .expect("send session.updated");
     })
-    .await;
+    .await
+    else {
+        return;
+    };
 
     let client = RealtimeWebsocketClient::new(test_provider(format!("http://{addr}")));
     let connection = client

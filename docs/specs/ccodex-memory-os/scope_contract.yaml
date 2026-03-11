@@ -1,0 +1,64 @@
+run_id: "2026-03-06-ccodex-memory-os"
+task_id: "ccodex-memory-os-phase-1"
+version: "1"
+assurance_mode: "high_assurance"
+change_type: "memory_runtime_refactor"
+runtime_impact: true
+packaging_changed: false
+in_scope:
+  files:
+    - "docs/plans/2026-03-06-ccodex-memory-os.md"
+    - "docs/ccodex-memory-os.md"
+    - "codex-rs/core/src/codex.rs"
+    - "codex-rs/core/src/codex/rollout_reconstruction.rs"
+    - "codex-rs/core/src/state/session.rs"
+    - "codex-rs/core/src/turn_memory.rs"
+    - "codex-rs/core/src/lib.rs"
+    - "codex-rs/core/src/memory_os.rs"
+    - "codex-rs/core/src/memory_os/*"
+    - "codex-rs/core/src/codex_tests.rs"
+    - "codex-rs/core/src/codex/rollout_reconstruction_tests.rs"
+  systems:
+    - "ccodex per-turn continuity"
+    - "session persistence"
+    - "rollout reconstruction"
+    - "memory extraction and prompt assembly"
+out_of_scope:
+  files:
+    - "codex CLI branding outside ccodex fallback guarantees"
+    - "network sandbox behavior"
+    - "upstream unrelated crates"
+  systems:
+    - "stock codex runtime behavior"
+    - "remote hosted retrieval infrastructure"
+forbidden_operations:
+  - "destructive_git_without_explicit_approval"
+  - "production_mutation_without_gate_pass"
+  - "policy_bypass"
+  - "changing stock codex continuity behavior"
+escalation_conditions:
+  - "ambiguous_scope"
+  - "security_or_privacy_risk"
+  - "repeated_failure_signature"
+  - "session corruption during migration"
+change_budget:
+  max_files: 14
+  max_behavioral_surface: "codex-core continuity path for ccodex only"
+success_criteria:
+  functional:
+    - "ccodex rebuilds active context from memory planes after compaction or resume"
+    - "pragmatic memory remains separate from observed state"
+    - "saved session artifacts preserve inspectable memory records"
+  reliability:
+    - "stale transcript restart loops are blocked by canonical state precedence"
+    - "semantic retrieval failure cannot corrupt canonical state"
+  security:
+    - "no new external service dependency is required for phase 1"
+  quality:
+    lint_mode: "strict"
+    typecheck_mode: "strict"
+    coverage_threshold_percent: 85
+    require_no_failing_tests: true
+    anti_mock_policy:
+      enabled: true
+      exceptions_require_approval: true

@@ -17,7 +17,10 @@ pub struct CompactClient<T: HttpTransport, A: AuthProvider> {
 }
 
 impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
-    pub fn new(transport: T, provider: Provider, auth: A) -> Self {
+    pub fn new(transport: T, mut provider: Provider, auth: A) -> Self {
+        // Preserve the first compact-endpoint 5xx so callers can handle provider-specific
+        // fallbacks, such as switching to native local compaction on a 501 Not Implemented.
+        provider.retry.retry_5xx = false;
         Self {
             session: EndpointSession::new(transport, provider, auth),
         }

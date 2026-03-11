@@ -1,0 +1,47 @@
+run_id: "20260307-173425"
+task_id: "ccodex-memory-os-06-retrieval"
+stages:
+  - name: "crawl"
+    objective: "Minimal isolated correctness"
+    exit_criteria:
+      - "all_crawl_tests_pass"
+      - "scope_violations_zero"
+      - "trace_integrity_complete"
+    evidence_refs:
+      - "cargo test -p codex-core memory_os_retrieve -- --nocapture"
+      - "codex-rs/core/src/memory_os/retrieve.rs"
+    status: "completed"
+
+  - name: "walk"
+    objective: "Composed behavior under moderate perturbation"
+    exit_criteria:
+      - "all_walk_tests_pass"
+      - "no_blocking_guardrail_failures"
+      - "recovery_path_validated"
+    evidence_refs:
+      - "cargo test -p codex-core reconstruct_history -- --nocapture"
+      - "codex-rs/core/src/memory_os/assemble.rs"
+    status: "completed"
+
+  - name: "run"
+    objective: "Integrated reliability under stress"
+    exit_criteria:
+      - "all_run_tests_pass"
+      - "adversarial_suite_pass"
+      - "no_open_high_severity_findings"
+    evidence_refs:
+      - "codex-rs/core/src/memory_os/tests.rs::memory_os_retrieve_sanitizes_non_finite_scores_for_deterministic_ranking"
+      - "codex-rs/core/src/memory_os/tests.rs::memory_os_retrieve_keeps_semantic_branch_disabled_by_default"
+    status: "completed"
+
+  - name: "rest"
+    objective: "Stabilized operation after stress with low drift and no override debt"
+    exit_criteria:
+      - "post_run_regression_window_clear"
+      - "no_expired_overrides"
+      - "drift_backlog_within_sla"
+      - "failure_signature_repeat_rate_declining"
+    evidence_refs:
+      - "runs/ccodex_loop/20260307-173425/task_ccodex-memory-os-06-retrieval.md"
+      - "artifact validation for this run directory"
+    status: "completed"

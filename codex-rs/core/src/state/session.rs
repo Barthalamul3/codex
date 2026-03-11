@@ -9,11 +9,14 @@ use crate::codex::PreviousTurnSettings;
 use crate::codex::SessionConfiguration;
 use crate::context_manager::ContextManager;
 use crate::error::Result as CodexResult;
+use crate::memory_os::MemoryOsSnapshot;
 use crate::protocol::RateLimitSnapshot;
 use crate::protocol::TokenUsage;
 use crate::protocol::TokenUsageInfo;
 use crate::tasks::RegularTask;
 use crate::truncate::TruncationPolicy;
+use crate::turn_memory::EpisodicRecord;
+use crate::turn_memory::WorkingLedger;
 use codex_protocol::protocol::TurnContextItem;
 
 /// Persistent, session-scoped state previously stored directly on `Session`.
@@ -32,6 +35,9 @@ pub(crate) struct SessionState {
     pub(crate) startup_regular_task: Option<JoinHandle<CodexResult<RegularTask>>>,
     pub(crate) active_mcp_tool_selection: Option<Vec<String>>,
     pub(crate) active_connector_selection: HashSet<String>,
+    shadow_working_ledger: WorkingLedger,
+    shadow_hot_working_set: Vec<EpisodicRecord>,
+    memory_os_snapshot: Option<MemoryOsSnapshot>,
 }
 
 impl SessionState {
@@ -49,6 +55,9 @@ impl SessionState {
             startup_regular_task: None,
             active_mcp_tool_selection: None,
             active_connector_selection: HashSet::new(),
+            shadow_working_ledger: WorkingLedger::default(),
+            shadow_hot_working_set: Vec::new(),
+            memory_os_snapshot: None,
         }
     }
 
@@ -216,6 +225,30 @@ impl SessionState {
 
     pub(crate) fn clear_mcp_tool_selection(&mut self) {
         self.active_mcp_tool_selection = None;
+    }
+
+    pub(crate) fn shadow_working_ledger(&self) -> WorkingLedger {
+        self.shadow_working_ledger.clone()
+    }
+
+    pub(crate) fn set_shadow_working_ledger(&mut self, ledger: WorkingLedger) {
+        self.shadow_working_ledger = ledger;
+    }
+
+    pub(crate) fn shadow_hot_working_set(&self) -> Vec<EpisodicRecord> {
+        self.shadow_hot_working_set.clone()
+    }
+
+    pub(crate) fn set_shadow_hot_working_set(&mut self, records: Vec<EpisodicRecord>) {
+        self.shadow_hot_working_set = records;
+    }
+
+    pub(crate) fn memory_os_snapshot(&self) -> Option<MemoryOsSnapshot> {
+        self.memory_os_snapshot.clone()
+    }
+
+    pub(crate) fn set_memory_os_snapshot(&mut self, snapshot: Option<MemoryOsSnapshot>) {
+        self.memory_os_snapshot = snapshot;
     }
 
     // Adds connector IDs to the active set and returns the merged selection.

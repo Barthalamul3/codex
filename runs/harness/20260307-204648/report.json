@@ -1,0 +1,30 @@
+{
+  "run_id": "20260307-204648",
+  "task_id": "ccodex-memory-os-08-observability",
+  "profile": "ccodex-memory-os-08-observability",
+  "status": "pass",
+  "results": [
+    {
+      "name": "format_check",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo fmt --all --check"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-204648/logs/format_check.stdout.log",
+      "stderr_log": "runs/harness/20260307-204648/logs/format_check.stderr.log"
+    },
+    {
+      "name": "tests_observability",
+      "command": [
+        "bash",
+        "-lc",
+        "cd codex-rs && cargo test -p codex-core ccodex_memory_observability -- --nocapture"
+      ],
+      "exit_code": 0,
+      "stdout_log": "runs/harness/20260307-204648/logs/tests_observability.stdout.log",
+      "stderr_log": "runs/harness/20260307-204648/logs/tests_observability.stderr.log"
+    }
+  ]
+}
