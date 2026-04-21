@@ -47,10 +47,14 @@ This means the end state should be:
 
 ## Current extensibility gap
 
-The repo currently does not contain a repo-local plugin package yet.
+A repo-local plugin scaffold now exists at `plugins/clawd-overlay/`, but it is
+not wired into the custom workflow yet.
 
-- No `.codex-plugin/plugin.json`
-- No `.agents/plugins/marketplace.json`
+- Present: `plugins/clawd-overlay/.codex-plugin/plugin.json`
+- Present: `plugins/clawd-overlay/.mcp.json`
+- Present: `plugins/clawd-overlay/.app.json`
+- Missing: repo-local marketplace registration in `.agents/plugins/marketplace.json`
+- Missing: migrated repo-local skills under the plugin package
 
 There are repo-local custom skills that are good plugin candidates:
 
@@ -141,13 +145,14 @@ Instead:
 
 ## Immediate next tasks
 
-1. Create the repo-local plugin scaffold and move or mirror the repo-local
-   skills into it.
-2. Audit current custom auth/provider behavior and map it to config-based
+1. Move or mirror the repo-local skills into `plugins/clawd-overlay/skills/`.
+2. Decide whether the plugin should also own repo-local MCP/app manifests or
+   continue using placeholders until the service audit is complete.
+3. Audit current custom auth/provider behavior and map it to config-based
    provider definitions.
-3. Write down the initial must-patch queue as commit-sized items, starting with
+4. Write down the initial must-patch queue as commit-sized items, starting with
    the already-landed low-risk TUI parity slices.
-4. Start a fresh worktree from `origin/main` for the replatform effort rather
+5. Start a fresh worktree from `origin/main` for the replatform effort rather
    than continuing to accumulate migration logic only on `overlay/main`.
 
 ## Success criteria
