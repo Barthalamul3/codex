@@ -1,0 +1,20 @@
+{
+  "name": "clawd-local",
+  "interface": {
+    "displayName": "Clawd Local Plugins"
+  },
+  "plugins": [
+    {
+      "name": "clawd-overlay",
+      "source": {
+        "source": "local",
+        "path": "./plugins/clawd-overlay"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

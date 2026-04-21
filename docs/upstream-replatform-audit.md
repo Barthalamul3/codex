@@ -55,7 +55,7 @@ custom workflow yet.
 - Present: `plugins/clawd-overlay/.mcp.json`
 - Present: `plugins/clawd-overlay/.app.json`
 - Present: mirrored skill copies under `plugins/clawd-overlay/skills/`
-- Missing: repo-local marketplace registration in `.agents/plugins/marketplace.json`
+- Present: repo-local marketplace registration in `.agents/plugins/marketplace.json`
 - Missing: plugin-first routing so the mirrored skills can replace the root
   `.codex/skills/` copies
 
@@ -153,9 +153,11 @@ Instead:
    continue using placeholders until the service audit is complete.
 2. Audit current custom auth/provider behavior and map it to config-based
    provider definitions.
-3. Write down the initial must-patch queue as commit-sized items, starting with
+3. Verify how the current runtime discovers repo-local marketplace manifests and
+   switch skill resolution to prefer the plugin-owned copies over `.codex/skills/`.
+4. Write down the initial must-patch queue as commit-sized items, starting with
    the already-landed low-risk TUI parity slices.
-4. Start a fresh worktree from `origin/main` for the replatform effort rather
+5. Start a fresh worktree from `origin/main` for the replatform effort rather
    than continuing to accumulate migration logic only on `overlay/main`.
 
 ## Success criteria

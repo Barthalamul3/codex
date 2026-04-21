@@ -3,46 +3,31 @@
   "version": "0.1.0",
   "description": "Repo-local migration target for Clawd custom skills and integrations.",
   "author": {
-    "name": "[TODO: Author Name]",
-    "email": "[TODO: author@example.com]",
-    "url": "[TODO: https://github.com/author]"
+    "name": "Clawd"
   },
-  "homepage": "[TODO: https://docs.example.com/plugin]",
-  "repository": "[TODO: https://github.com/author/plugin]",
-  "license": "[TODO: MIT]",
   "keywords": [
-    "[TODO: keyword1]",
-    "[TODO: keyword2]"
+    "clawd",
+    "workflow",
+    "codex"
   ],
   "skills": "./skills/",
-  "hooks": "[TODO: ./hooks.json]",
   "mcpServers": "./.mcp.json",
   "apps": "./.app.json",
   "interface": {
     "displayName": "Clawd Overlay",
     "shortDescription": "Custom workflow overlay migration target.",
-    "longDescription": "Repo-local plugin scaffold for moving Clawd custom skills, MCP integrations, and app integrations out of the long-lived overlay fork and onto upstream-compatible packaging surfaces.",
-    "developerName": "[TODO: OpenAI]",
+    "longDescription": "Repo-local plugin that mirrors Clawd custom skills and will become the upstream-compatible home for custom MCP and app integrations.",
+    "developerName": "Clawd",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive",
       "Write"
     ],
-    "websiteURL": "[TODO: https://openai.com/]",
-    "privacyPolicyURL": "[TODO: https://openai.com/policies/row-privacy-policy/]",
-    "termsOfServiceURL": "[TODO: https://openai.com/policies/row-terms-of-use/]",
     "defaultPrompt": [
-      "[TODO: Summarize my inbox and draft replies for me.]",
-      "[TODO: Find open bugs and turn them into tickets.]",
-      "[TODO: Review today's meetings and flag gaps.]"
+      "Babysit this pull request until CI and reviews are clear.",
+      "Run the remote Codex test workflow for this change.",
+      "Exercise the TUI interactively and capture regressions."
     ],
-    "brandColor": "[TODO: #3B82F6]",
-    "composerIcon": "[TODO: ./assets/icon.png]",
-    "logo": "[TODO: ./assets/logo.png]",
-    "screenshots": [
-      "[TODO: ./assets/screenshot1.png]",
-      "[TODO: ./assets/screenshot2.png]",
-      "[TODO: ./assets/screenshot3.png]"
-    ]
+    "brandColor": "#2563EB"
   }
 }
