@@ -47,14 +47,17 @@ This means the end state should be:
 
 ## Current extensibility gap
 
-A repo-local plugin scaffold now exists at `plugins/clawd-overlay/`, but it is
-not wired into the custom workflow yet.
+A repo-local plugin scaffold now exists at `plugins/clawd-overlay/`, and the
+repo-local skills have been mirrored into it, but it is not wired into the
+custom workflow yet.
 
 - Present: `plugins/clawd-overlay/.codex-plugin/plugin.json`
 - Present: `plugins/clawd-overlay/.mcp.json`
 - Present: `plugins/clawd-overlay/.app.json`
+- Present: mirrored skill copies under `plugins/clawd-overlay/skills/`
 - Missing: repo-local marketplace registration in `.agents/plugins/marketplace.json`
-- Missing: migrated repo-local skills under the plugin package
+- Missing: plugin-first routing so the mirrored skills can replace the root
+  `.codex/skills/` copies
 
 There are repo-local custom skills that are good plugin candidates:
 
@@ -62,7 +65,8 @@ There are repo-local custom skills that are good plugin candidates:
 - `.codex/skills/remote-tests/`
 - `.codex/skills/test-tui/`
 
-These should be treated as the first migration target out of the fork surface.
+These are now mirrored into the plugin package and should be treated as the
+first migration target out of the fork surface.
 
 ## Classification
 
@@ -145,14 +149,13 @@ Instead:
 
 ## Immediate next tasks
 
-1. Move or mirror the repo-local skills into `plugins/clawd-overlay/skills/`.
-2. Decide whether the plugin should also own repo-local MCP/app manifests or
+1. Decide whether the plugin should also own repo-local MCP/app manifests or
    continue using placeholders until the service audit is complete.
-3. Audit current custom auth/provider behavior and map it to config-based
+2. Audit current custom auth/provider behavior and map it to config-based
    provider definitions.
-4. Write down the initial must-patch queue as commit-sized items, starting with
+3. Write down the initial must-patch queue as commit-sized items, starting with
    the already-landed low-risk TUI parity slices.
-5. Start a fresh worktree from `origin/main` for the replatform effort rather
+4. Start a fresh worktree from `origin/main` for the replatform effort rather
    than continuing to accumulate migration logic only on `overlay/main`.
 
 ## Success criteria
