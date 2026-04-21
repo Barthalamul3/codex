@@ -6,7 +6,8 @@ histories.
 
 ## Current state
 
-- Active working branch: `overlay/repo-guidance`
+- Active working branch for replatform work: `replatform/origin-main`
+- Migration staging branch on the overlay line: `overlay/repo-guidance`
 - `overlay/repo-guidance` is `20` commits ahead of `overlay/main` and `0`
   commits behind it.
 - `overlay/main` and `origin/main` currently have no merge-base, so "get back to
@@ -45,7 +46,35 @@ This means the end state should be:
 3. Minimal provider/config overlays for service routing and auth
 4. A short curated patch queue for the remaining core/TUI behavior deltas
 
-## Current extensibility gap
+## Validated upstream behavior
+
+The replatform branch now has enough evidence to narrow the remaining gap more
+precisely.
+
+- Repo-local marketplace discovery is already upstream-supported.
+  - `PluginListParams` in `codex-rs/app-server-protocol/src/protocol/v2.rs`
+    explicitly documents `cwds` as repo marketplace discovery roots.
+  - The TUI already sends the current working directory when requesting
+    `plugin/list` in `codex-rs/tui/src/app/background_requests.rs`.
+  - `PluginsManager::list_marketplaces_for_config()` already consumes those
+    roots and `core-plugins` already supports
+    `.agents/plugins/marketplace.json`.
+- Plugin loading remains intentionally user-config driven.
+  - `load_plugins_from_layer_stack()` only reads configured plugins from the
+    user layer.
+  - Project `.codex/config.toml` files do not activate plugins.
+- Legacy project skills still outrank mirrored plugin skills by default.
+  - Project `.codex/skills/` roots load as `Repo` scope.
+  - Plugin skill roots are appended later and load as `User` scope.
+  - This means the mirrored plugin copies do not automatically replace the
+    existing `.codex/skills/` copies yet.
+- User-layer skill path rules already provide an upstream-native cutover path.
+  - `core-skills` supports `[[skills.config]]` with an absolute `path` selector
+    and `enabled = false`.
+  - Those rules apply from the user/session layers only, which fits the desired
+    migration model.
+
+## Current cutover gap
 
 A repo-local plugin scaffold now exists at `plugins/clawd-overlay/`, and the
 repo-local skills have been mirrored into it, but it is not wired into the
@@ -56,8 +85,8 @@ custom workflow yet.
 - Present: `plugins/clawd-overlay/.app.json`
 - Present: mirrored skill copies under `plugins/clawd-overlay/skills/`
 - Present: repo-local marketplace registration in `.agents/plugins/marketplace.json`
-- Missing: plugin-first routing so the mirrored skills can replace the root
-  `.codex/skills/` copies
+- Missing: final cutover of the old project `.codex/skills/` copies so the
+  plugin-owned copies become the effective source of truth
 
 There are repo-local custom skills that are good plugin candidates:
 
@@ -67,6 +96,25 @@ There are repo-local custom skills that are good plugin candidates:
 
 These are now mirrored into the plugin package and should be treated as the
 first migration target out of the fork surface.
+
+Recommended cutover config:
+
+```toml
+[[skills.config]]
+path = "/absolute/path/to/repo/.codex/skills/babysit-pr/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/absolute/path/to/repo/.codex/skills/remote-tests/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/absolute/path/to/repo/.codex/skills/test-tui/SKILL.md"
+enabled = false
+```
+
+This keeps upstream runtime behavior intact while making the plugin mirror the
+effective copy during migration.
 
 ## Classification
 
@@ -191,15 +239,17 @@ Instead:
 
 ## Immediate next tasks
 
-1. Decide whether the plugin should also own repo-local MCP/app manifests or
+1. Validate the repo-local plugin install/enable flow from the upstream-rooted
+   branch using the existing marketplace discovery path.
+2. Apply user-layer `skills.config` path rules for the mirrored legacy skill
+   files during cutover instead of patching the runtime first.
+3. Decide whether the plugin should also own repo-local MCP/app manifests or
    continue using placeholders until the service audit is complete.
-2. Audit current custom auth/provider behavior and map it to config-based
+4. Audit current custom auth/provider behavior and map it to config-based
    provider definitions.
-3. Verify how the current runtime discovers repo-local marketplace manifests and
-   switch skill resolution to prefer the plugin-owned copies over `.codex/skills/`.
-4. Write down the initial must-patch queue as commit-sized items, starting with
+5. Write down the initial must-patch queue as commit-sized items, starting with
    the already-landed low-risk TUI parity slices.
-5. Start a fresh worktree from `origin/main` for the replatform effort rather
+6. Start a fresh worktree from `origin/main` for the replatform effort rather
    than continuing to accumulate migration logic only on `overlay/main`.
 
 ## Success criteria
@@ -209,6 +259,8 @@ following are true:
 
 - Custom skills and workflow packaging no longer depend on fork-only repo
   layout.
+- Repo-local plugin installation and activation work on top of upstream without
+  adding new marketplace-discovery patches.
 - Provider/service access no longer depends on hardcoded Rust behavior where
   upstream config already provides an extension point.
 - The remaining custom delta is small enough to review as an explicit patch
