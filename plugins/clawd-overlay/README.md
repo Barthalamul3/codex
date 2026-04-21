@@ -12,6 +12,8 @@ workflow.
   patch.
 - Plugin manifests already support plugin-owned `skills`, `mcpServers`, and
   `apps`.
+- The current upstream CLI exposes marketplace management, but plugin install is
+  still driven through the TUI/app-server plugin flow.
 
 ## Current migration constraint
 
@@ -25,8 +27,10 @@ absolute path.
 ## Recommended cutover
 
 1. Open this repo in Codex/TUI.
-2. Discover and install `clawd-overlay` from the repo-local marketplace.
-3. Enable the plugin in user config.
+2. Open the plugins browser and discover `clawd-overlay` from the repo-local
+   marketplace for the current working directory.
+3. Let install persist the plugin entry in user config.
+   - Upstream install already writes `enabled = true` for the plugin key.
 4. Disable the legacy project skill files in user config:
 
 ```toml

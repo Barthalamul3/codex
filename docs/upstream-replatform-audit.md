@@ -59,6 +59,11 @@ precisely.
   - `PluginsManager::list_marketplaces_for_config()` already consumes those
     roots and `core-plugins` already supports
     `.agents/plugins/marketplace.json`.
+- Local plugin install already auto-enables the plugin in user config.
+  - `PluginsManager::install_resolved_plugin()` writes
+    `plugins.<plugin@marketplace>.enabled = true`.
+  - Existing unit coverage already checks that install writes the keyed plugin
+    entry and `enabled = true`.
 - Plugin loading remains intentionally user-config driven.
   - `load_plugins_from_layer_stack()` only reads configured plugins from the
     user layer.
