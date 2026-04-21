@@ -109,6 +109,48 @@ Working rule:
   `chatgpt_base_url`, headers, env vars, or forced workspace/account settings,
   it should not remain hardcoded in Rust.
 
+### Provider migration findings
+
+Current findings from the overlay worktree:
+
+- No `theclawbay` or `clawbay` runtime references were found in the
+  `overlay-main` worktree.
+- Upstream already exposes the required provider and account-routing surfaces:
+  - `model_providers`
+  - `chatgpt_base_url`
+  - `forced_chatgpt_workspace_id`
+- Existing config tests already exercise a generic custom provider shape using
+  `openai-custom`, which is the correct architectural direction.
+
+Implication:
+
+- The service/provider side of the custom setup should be treated as a config
+  migration problem first, not a fork-preservation problem.
+
+Config templates to target during replatform:
+
+OpenAI-compatible proxy provider:
+
+```toml
+model_provider = "clawd-service"
+
+[model_providers.clawd-service]
+name = "Clawd Service"
+base_url = "https://[TODO: provider-host]/v1"
+env_key = "CLAWD_SERVICE_API_KEY"
+wire_api = "responses"
+```
+
+ChatGPT/backend-api style account routing:
+
+```toml
+chatgpt_base_url = "https://[TODO: backend-host]/backend-api/"
+forced_chatgpt_workspace_id = "[TODO: optional-workspace-id]"
+```
+
+Until the real deployment details are audited, these should stay as templates
+rather than baked-in defaults.
+
 ### Must-patch
 
 These are the remaining items that still require code patches on top of
