@@ -1,0 +1,165 @@
+# Upstream Replatform Audit
+
+This document tracks the current path from the custom overlay line back toward
+current upstream Codex without attempting a direct rebase of unrelated branch
+histories.
+
+## Current state
+
+- Active working branch: `overlay/repo-guidance`
+- `overlay/repo-guidance` is `20` commits ahead of `overlay/main` and `0`
+  commits behind it.
+- `overlay/main` and `origin/main` currently have no merge-base, so "get back to
+  main" is not a normal merge or rebase problem.
+- Tree-level divergence between `overlay/main` and `origin/main` is still large:
+  `1820 files changed, 73870 insertions(+), 220679 deletions(-)`.
+- The heaviest custom surface areas are:
+  - `codex-rs/core/src`
+  - `codex-rs/tui/src`
+  - `codex-rs/app-server-protocol/schema`
+  - `codex-rs/core/tests`
+  - `codex-rs/app-server/tests`
+  - `codex-rs/tools/src`
+
+## Why the plugin/patch strategy is still the right one
+
+Upstream already provides two important extension surfaces that reduce the need
+for a long-lived fork:
+
+- Plugin manifest support in
+  `codex-rs/core/src/plugins/manifest.rs`
+  - Supports plugin-defined `skills`, `mcpServers`, and `apps`.
+- Runtime provider configuration in
+  `codex-rs/core/src/model_provider_info.rs`
+  and `codex-rs/core/src/config/mod.rs`
+  - Supports user-defined `model_providers`
+  - Supports `chatgpt_base_url`
+  - Supports `forced_chatgpt_workspace_id`
+  - Supports `oss_provider`
+  - Supports auth and header customization without hardcoding provider behavior
+
+This means the end state should be:
+
+1. A fresh branch rooted on `origin/main`
+2. A repo-local plugin for custom skills/MCP/apps/workflow packaging
+3. Minimal provider/config overlays for service routing and auth
+4. A short curated patch queue for the remaining core/TUI behavior deltas
+
+## Current extensibility gap
+
+The repo currently does not contain a repo-local plugin package yet.
+
+- No `.codex-plugin/plugin.json`
+- No `.agents/plugins/marketplace.json`
+
+There are repo-local custom skills that are good plugin candidates:
+
+- `.codex/skills/babysit-pr/`
+- `.codex/skills/remote-tests/`
+- `.codex/skills/test-tui/`
+
+These should be treated as the first migration target out of the fork surface.
+
+## Classification
+
+### Pluginizable
+
+These are the items that should move into a proper repo-local plugin package
+instead of staying as fork-only code or ad hoc repo files.
+
+- Repo-local skills under `.codex/skills/`
+- Custom MCP server wiring that can be exposed through plugin `mcpServers`
+- Custom app wiring that can be exposed through plugin `apps`
+- Marketplace metadata for how the custom workflow should appear to users
+
+Target shape:
+
+- `.codex-plugin/plugin.json`
+- `.codex-plugin/skills/`
+- `.codex-plugin/.mcp.json`
+- `.codex-plugin/.app.json`
+- optional repo-local `.agents/plugins/marketplace.json`
+
+### Configurable
+
+These are the customizations that should live in config, not in code.
+
+- Custom backend/provider routing
+- Alternate base URLs
+- Provider-specific auth headers and environment variables
+- Workspace/account restrictions
+- Preferred OSS/local model provider selection
+
+Relevant upstream surfaces:
+
+- `codex-rs/core/src/model_provider_info.rs`
+- `codex-rs/core/src/config/mod.rs`
+
+Working rule:
+
+- If a custom service integration can be expressed through `model_providers`,
+  `chatgpt_base_url`, headers, env vars, or forced workspace/account settings,
+  it should not remain hardcoded in Rust.
+
+### Must-patch
+
+These are the remaining items that still require code patches on top of
+upstream, at least for now.
+
+- TUI behavior changes that upstream does not expose via plugin/config
+- Core/session/agent semantics that affect behavior rather than packaging
+- App-server or protocol deltas that are custom and not upstream-compatible
+- Sandbox or execution behavior changes that cannot be expressed in config
+
+Recent examples already being carried as targeted patches:
+
+- TUI shell follow-up queue behavior
+- TUI tmux-aware notifications
+- TUI skill mention fallback labels
+- TUI VS Code WSL keyboard-enhancement fix
+- MCP tool metadata thread-id propagation
+- Guardian review flow adjustments
+
+These should be kept as a small, explicit patch queue rather than mixed into a
+monolithic long-lived fork branch.
+
+## Recommended branch model
+
+Do not try to merge `overlay/main` back into `origin/main`.
+
+Instead:
+
+1. Keep `overlay/repo-guidance` as the current staging branch on top of
+   `overlay/main` until its safe slices are folded down.
+2. Create a fresh replatform branch from `origin/main`.
+3. Recreate the custom workflow in this order:
+   - plugin package
+   - provider/config overlays
+   - minimal must-patch queue
+4. Port patches one by one with tests instead of replaying the full historical
+   overlay branch.
+
+## Immediate next tasks
+
+1. Create the repo-local plugin scaffold and move or mirror the repo-local
+   skills into it.
+2. Audit current custom auth/provider behavior and map it to config-based
+   provider definitions.
+3. Write down the initial must-patch queue as commit-sized items, starting with
+   the already-landed low-risk TUI parity slices.
+4. Start a fresh worktree from `origin/main` for the replatform effort rather
+   than continuing to accumulate migration logic only on `overlay/main`.
+
+## Success criteria
+
+We should consider the migration strategy to be working when all of the
+following are true:
+
+- Custom skills and workflow packaging no longer depend on fork-only repo
+  layout.
+- Provider/service access no longer depends on hardcoded Rust behavior where
+  upstream config already provides an extension point.
+- The remaining custom delta is small enough to review as an explicit patch
+  stack.
+- New upstream sync work happens by replaying a short patch queue onto
+  `origin/main`, not by reconciling two unrelated long-lived branches.
