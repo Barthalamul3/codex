@@ -34,6 +34,8 @@ pub(crate) fn start_memories_startup_task(
             return;
         };
 
+        // Run the daily DB audit before any other memory maintenance.
+        phase1::audit(&session).await;
         // Clean memories to make preserve DB size
         phase1::prune(&session, &config).await;
         // Run phase 1.

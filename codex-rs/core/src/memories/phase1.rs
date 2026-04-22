@@ -147,6 +147,31 @@ pub(in crate::memories) async fn prune(session: &Arc<Session>, config: &Config) 
     }
 }
 
+/// Run the once-per-day DB audit that quarantines known-bad memory rows.
+pub(in crate::memories) async fn audit(session: &Arc<Session>) {
+    if let Some(db) = session.services.state_db.as_deref() {
+        match db.run_memory_db_audit_if_due(session.conversation_id).await {
+            Ok(Some(stats)) => {
+                if stats.deleted_empty_outputs > 0
+                    || stats.deleted_unselected_bad_outputs > 0
+                    || stats.polluted_selected_threads > 0
+                {
+                    info!(
+                        "memory db audit cleaned {} empty row(s), deleted {} bad unselected row(s), and quarantined {} selected polluted thread(s)",
+                        stats.deleted_empty_outputs,
+                        stats.deleted_unselected_bad_outputs,
+                        stats.polluted_selected_threads
+                    );
+                }
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!("state db memory audit failed during memories startup: {err}");
+            }
+        }
+    }
+}
+
 /// JSON schema used to constrain phase-1 model output.
 pub fn output_schema() -> Value {
     json!({

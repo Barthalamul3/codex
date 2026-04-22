@@ -251,6 +251,8 @@ Recent carried patches on `replatform/origin-main`:
   partial carry from `overlay: 843aa0645b`
 - Memory post-phase2 `memory_summary.md` normalization:
   partial carry from `overlay: 843aa0645b`
+- Memory startup DB audit before phase 1 / phase 2:
+  partial carry from `overlay: 843aa0645b`
 
 Implication:
 
@@ -319,12 +321,6 @@ time against current upstream `main`:
    - treat these as one connected patch train rather than five independent
      patches, because prompt guidance, config, and helper-tool exposure depend
      on each other.
-2. Memory runtime behavior:
-   - remaining carry from `843aa0645b`:
-     startup DB audit before phase 1 / phase 2
-   Working assumption:
-   - keep these separate from the helper-tool stack because they change session
-     and runtime behavior, not just tool exposure.
 ### Local environment / build-only patches
 
 These are useful for this machine or this workflow, but they should not be

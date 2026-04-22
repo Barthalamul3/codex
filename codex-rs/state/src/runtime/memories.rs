@@ -21,16 +21,27 @@ use uuid::Uuid;
 
 const JOB_KIND_MEMORY_STAGE1: &str = "memory_stage1";
 const JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL: &str = "memory_consolidate_global";
+const JOB_KIND_MEMORY_DB_AUDIT_GLOBAL: &str = "memory_db_audit_global";
 const MEMORY_CONSOLIDATION_JOB_KEY: &str = "global";
+const MEMORY_DB_AUDIT_JOB_KEY: &str = "global";
 
 const DEFAULT_RETRY_REMAINING: i64 = 3;
+const MEMORY_DB_AUDIT_INTERVAL_SECONDS: i64 = 24 * 60 * 60;
+const MEMORY_DB_AUDIT_LEASE_SECONDS: i64 = 60 * 60;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryDbAuditStats {
+    pub deleted_empty_outputs: usize,
+    pub deleted_unselected_bad_outputs: usize,
+    pub polluted_selected_threads: usize,
+}
 
 impl StateRuntime {
     /// Deletes all persisted memory state in one transaction.
     ///
     /// This removes every `stage1_outputs` row and all `jobs` rows for the
-    /// stage-1 (`memory_stage1`) and phase-2 (`memory_consolidate_global`)
-    /// memory pipelines.
+    /// stage-1 (`memory_stage1`), phase-2 (`memory_consolidate_global`), and
+    /// audit (`memory_db_audit_global`) memory pipelines.
     pub async fn clear_memory_data(&self) -> anyhow::Result<()> {
         self.clear_memory_data_inner(/*disable_existing_threads*/ false)
             .await
@@ -44,6 +55,207 @@ impl StateRuntime {
     pub async fn reset_memory_data_for_fresh_start(&self) -> anyhow::Result<()> {
         self.clear_memory_data_inner(/*disable_existing_threads*/ true)
             .await
+    }
+
+    /// Audits persisted memory rows and cleans known-invalid data at most once per day.
+    pub async fn run_memory_db_audit_if_due(
+        &self,
+        worker_id: ThreadId,
+    ) -> anyhow::Result<Option<MemoryDbAuditStats>> {
+        let now = Utc::now().timestamp();
+        let ownership_token = Uuid::new_v4().to_string();
+        let mut tx = self.pool.begin().await?;
+
+        let job_row = sqlx::query(
+            r#"
+SELECT status, lease_until, last_success_watermark
+FROM jobs
+WHERE kind = ? AND job_key = ?
+            "#,
+        )
+        .bind(JOB_KIND_MEMORY_DB_AUDIT_GLOBAL)
+        .bind(MEMORY_DB_AUDIT_JOB_KEY)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        if let Some(row) = job_row {
+            let status = row.try_get::<String, _>("status")?;
+            let lease_until = row.try_get::<Option<i64>, _>("lease_until")?;
+            let last_success_watermark = row.try_get::<Option<i64>, _>("last_success_watermark")?;
+            if status == "running" && lease_until.unwrap_or(0) > now {
+                tx.commit().await?;
+                return Ok(None);
+            }
+            if last_success_watermark.unwrap_or(0) >= now - MEMORY_DB_AUDIT_INTERVAL_SECONDS {
+                tx.commit().await?;
+                return Ok(None);
+            }
+        }
+
+        sqlx::query(
+            r#"
+INSERT INTO jobs (
+    kind,
+    job_key,
+    status,
+    worker_id,
+    ownership_token,
+    started_at,
+    finished_at,
+    lease_until,
+    retry_at,
+    retry_remaining,
+    last_error,
+    input_watermark,
+    last_success_watermark
+) VALUES (?, ?, 'running', ?, ?, ?, NULL, ?, NULL, 0, NULL, NULL, NULL)
+ON CONFLICT(kind, job_key) DO UPDATE SET
+    status = 'running',
+    worker_id = excluded.worker_id,
+    ownership_token = excluded.ownership_token,
+    started_at = excluded.started_at,
+    finished_at = NULL,
+    lease_until = excluded.lease_until,
+    retry_at = NULL,
+    last_error = NULL
+            "#,
+        )
+        .bind(JOB_KIND_MEMORY_DB_AUDIT_GLOBAL)
+        .bind(MEMORY_DB_AUDIT_JOB_KEY)
+        .bind(worker_id.to_string())
+        .bind(ownership_token.as_str())
+        .bind(now)
+        .bind(now + MEMORY_DB_AUDIT_LEASE_SECONDS)
+        .execute(&mut *tx)
+        .await?;
+
+        let rows = sqlx::query(
+            r#"
+SELECT
+    so.thread_id,
+    so.raw_memory,
+    so.rollout_summary,
+    so.selected_for_phase2,
+    COALESCE(t.memory_mode, 'enabled') AS memory_mode
+FROM stage1_outputs AS so
+LEFT JOIN threads AS t
+    ON t.id = so.thread_id
+            "#,
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+
+        let mut empty_thread_ids = Vec::new();
+        let mut bad_unselected_thread_ids = Vec::new();
+        let mut bad_selected_thread_ids = Vec::new();
+
+        for row in rows {
+            let thread_id = row.try_get::<String, _>("thread_id")?;
+            let raw_memory = row.try_get::<String, _>("raw_memory")?;
+            let rollout_summary = row.try_get::<String, _>("rollout_summary")?;
+            let selected_for_phase2 = row.try_get::<i64, _>("selected_for_phase2")?;
+            let memory_mode = row.try_get::<String, _>("memory_mode")?;
+
+            if raw_memory.trim().is_empty() && rollout_summary.trim().is_empty() {
+                empty_thread_ids.push(thread_id);
+                continue;
+            }
+
+            if memory_mode != "enabled"
+                || !(has_legacy_artifact_noise(&raw_memory)
+                    || has_legacy_artifact_noise(&rollout_summary))
+            {
+                continue;
+            }
+
+            if selected_for_phase2 != 0 {
+                bad_selected_thread_ids.push(thread_id);
+            } else {
+                bad_unselected_thread_ids.push(thread_id);
+            }
+        }
+
+        if !empty_thread_ids.is_empty() {
+            let mut query =
+                QueryBuilder::<Sqlite>::new("DELETE FROM stage1_outputs WHERE thread_id IN (");
+            let mut separated = query.separated(", ");
+            for thread_id in &empty_thread_ids {
+                separated.push_bind(thread_id);
+            }
+            separated.push_unseparated(")");
+            query.build().execute(&mut *tx).await?;
+        }
+
+        if !bad_unselected_thread_ids.is_empty() {
+            let mut delete_outputs =
+                QueryBuilder::<Sqlite>::new("DELETE FROM stage1_outputs WHERE thread_id IN (");
+            let mut outputs_separated = delete_outputs.separated(", ");
+            for thread_id in &bad_unselected_thread_ids {
+                outputs_separated.push_bind(thread_id);
+            }
+            outputs_separated.push_unseparated(")");
+            delete_outputs.build().execute(&mut *tx).await?;
+
+            let mut delete_jobs = QueryBuilder::<Sqlite>::new("DELETE FROM jobs WHERE kind = ");
+            delete_jobs.push_bind(JOB_KIND_MEMORY_STAGE1);
+            delete_jobs.push(" AND job_key IN (");
+            let mut jobs_separated = delete_jobs.separated(", ");
+            for thread_id in &bad_unselected_thread_ids {
+                jobs_separated.push_bind(thread_id);
+            }
+            jobs_separated.push_unseparated(")");
+            delete_jobs.build().execute(&mut *tx).await?;
+        }
+
+        if !bad_selected_thread_ids.is_empty() {
+            let mut update_threads = QueryBuilder::<Sqlite>::new(
+                "UPDATE threads SET memory_mode = 'polluted' WHERE id IN (",
+            );
+            let mut separated = update_threads.separated(", ");
+            for thread_id in &bad_selected_thread_ids {
+                separated.push_bind(thread_id);
+            }
+            separated.push_unseparated(") AND memory_mode = 'enabled'");
+            let rows_affected = update_threads
+                .build()
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+            if rows_affected > 0 {
+                enqueue_global_consolidation_with_executor(&mut *tx, now).await?;
+            }
+        }
+
+        sqlx::query(
+            r#"
+UPDATE jobs
+SET
+    status = 'completed',
+    worker_id = NULL,
+    ownership_token = NULL,
+    finished_at = ?,
+    lease_until = NULL,
+    retry_at = NULL,
+    last_error = NULL,
+    last_success_watermark = ?
+WHERE kind = ? AND job_key = ? AND ownership_token = ?
+            "#,
+        )
+        .bind(now)
+        .bind(now)
+        .bind(JOB_KIND_MEMORY_DB_AUDIT_GLOBAL)
+        .bind(MEMORY_DB_AUDIT_JOB_KEY)
+        .bind(ownership_token.as_str())
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
+
+        Ok(Some(MemoryDbAuditStats {
+            deleted_empty_outputs: empty_thread_ids.len(),
+            deleted_unselected_bad_outputs: bad_unselected_thread_ids.len(),
+            polluted_selected_threads: bad_selected_thread_ids.len(),
+        }))
     }
 
     async fn clear_memory_data_inner(&self, disable_existing_threads: bool) -> anyhow::Result<()> {
@@ -60,11 +272,12 @@ DELETE FROM stage1_outputs
         sqlx::query(
             r#"
 DELETE FROM jobs
-WHERE kind = ? OR kind = ?
+WHERE kind = ? OR kind = ? OR kind = ?
             "#,
         )
         .bind(JOB_KIND_MEMORY_STAGE1)
         .bind(JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL)
+        .bind(JOB_KIND_MEMORY_DB_AUDIT_GLOBAL)
         .execute(&mut *tx)
         .await?;
 
@@ -1245,6 +1458,20 @@ WHERE kind = ? AND job_key = ?
     }
 }
 
+fn has_legacy_artifact_noise(text: &str) -> bool {
+    let normalized = text.to_ascii_lowercase();
+    [
+        "<memory_plane_context>",
+        "memory.md",
+        "memory_summary.md",
+        "raw_memories.md",
+        "rollout_summaries/",
+        "memories/skills/",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
 async fn enqueue_global_consolidation_with_executor<'e, E>(
     executor: E,
     input_watermark: i64,
@@ -1299,7 +1526,11 @@ ON CONFLICT(kind, job_key) DO UPDATE SET
 #[cfg(test)]
 mod tests {
     use super::JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL;
+    use super::JOB_KIND_MEMORY_DB_AUDIT_GLOBAL;
     use super::JOB_KIND_MEMORY_STAGE1;
+    use super::MEMORY_CONSOLIDATION_JOB_KEY;
+    use super::MEMORY_DB_AUDIT_JOB_KEY;
+    use super::MemoryDbAuditStats;
     use super::StateRuntime;
     use super::test_support::test_thread_metadata;
     use super::test_support::unique_temp_dir;
@@ -1313,6 +1544,154 @@ mod tests {
     use sqlx::Row;
     use std::sync::Arc;
     use uuid::Uuid;
+
+    #[tokio::test]
+    async fn run_memory_db_audit_if_due_cleans_bad_rows_once_per_day() {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+            .await
+            .expect("initialize runtime");
+
+        let owner = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("owner id");
+        let good_thread = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
+        let selected_bad_thread =
+            ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
+        let unselected_bad_thread =
+            ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
+        let empty_thread = ThreadId::from_string(&Uuid::new_v4().to_string()).expect("thread id");
+
+        for (thread_id, workspace) in [
+            (good_thread, "workspace-good"),
+            (selected_bad_thread, "workspace-selected-bad"),
+            (unselected_bad_thread, "workspace-unselected-bad"),
+            (empty_thread, "workspace-empty"),
+        ] {
+            runtime
+                .upsert_thread(&test_thread_metadata(
+                    &codex_home,
+                    thread_id,
+                    codex_home.join(workspace),
+                ))
+                .await
+                .expect("upsert thread");
+        }
+
+        sqlx::query(
+            r#"
+INSERT INTO stage1_outputs (
+    thread_id,
+    source_updated_at,
+    raw_memory,
+    rollout_summary,
+    generated_at,
+    selected_for_phase2,
+    selected_for_phase2_source_updated_at
+) VALUES
+    (?, 100, 'good raw memory', 'good summary', 100, 0, NULL),
+    (?, 101, 'bad raw memory mentioning MEMORY.md', 'bad summary', 101, 1, 101),
+    (?, 102, 'bad raw memory mentioning memory_summary.md', 'bad summary', 102, 0, NULL),
+    (?, 103, '', '', 103, 0, NULL)
+            "#,
+        )
+        .bind(good_thread.to_string())
+        .bind(selected_bad_thread.to_string())
+        .bind(unselected_bad_thread.to_string())
+        .bind(empty_thread.to_string())
+        .execute(runtime.pool.as_ref())
+        .await
+        .expect("insert stage1 outputs");
+
+        sqlx::query(
+            r#"
+INSERT INTO jobs (
+    kind,
+    job_key,
+    status,
+    worker_id,
+    ownership_token,
+    started_at,
+    finished_at,
+    lease_until,
+    retry_at,
+    retry_remaining,
+    last_error,
+    input_watermark,
+    last_success_watermark
+) VALUES (?, ?, 'completed', NULL, NULL, NULL, NULL, NULL, NULL, 3, NULL, 102, 102)
+            "#,
+        )
+        .bind(JOB_KIND_MEMORY_STAGE1)
+        .bind(unselected_bad_thread.to_string())
+        .execute(runtime.pool.as_ref())
+        .await
+        .expect("insert stage1 job");
+
+        let audit = runtime
+            .run_memory_db_audit_if_due(owner)
+            .await
+            .expect("run memory db audit")
+            .expect("audit should run");
+        assert_eq!(
+            audit,
+            MemoryDbAuditStats {
+                deleted_empty_outputs: 1,
+                deleted_unselected_bad_outputs: 1,
+                polluted_selected_threads: 1,
+            }
+        );
+
+        let remaining_threads: Vec<String> =
+            sqlx::query_scalar("SELECT thread_id FROM stage1_outputs ORDER BY thread_id")
+                .fetch_all(runtime.pool.as_ref())
+                .await
+                .expect("list stage1 outputs");
+        let mut expected_threads = vec![good_thread.to_string(), selected_bad_thread.to_string()];
+        expected_threads.sort();
+        assert_eq!(remaining_threads, expected_threads);
+
+        let selected_bad_memory_mode: String =
+            sqlx::query_scalar("SELECT memory_mode FROM threads WHERE id = ?")
+                .bind(selected_bad_thread.to_string())
+                .fetch_one(runtime.pool.as_ref())
+                .await
+                .expect("selected bad memory mode");
+        assert_eq!(selected_bad_memory_mode, "polluted");
+
+        let deleted_stage1_job_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM jobs WHERE kind = ? AND job_key = ?")
+                .bind(JOB_KIND_MEMORY_STAGE1)
+                .bind(unselected_bad_thread.to_string())
+                .fetch_one(runtime.pool.as_ref())
+                .await
+                .expect("count stage1 jobs");
+        assert_eq!(deleted_stage1_job_count, 0);
+
+        let phase2_job_status: String =
+            sqlx::query_scalar("SELECT status FROM jobs WHERE kind = ? AND job_key = ?")
+                .bind(JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL)
+                .bind(MEMORY_CONSOLIDATION_JOB_KEY)
+                .fetch_one(runtime.pool.as_ref())
+                .await
+                .expect("phase2 job status");
+        assert_eq!(phase2_job_status, "pending");
+
+        let second_audit = runtime
+            .run_memory_db_audit_if_due(owner)
+            .await
+            .expect("rerun memory db audit");
+        assert_eq!(second_audit, None);
+
+        let audit_job_status: String =
+            sqlx::query_scalar("SELECT status FROM jobs WHERE kind = ? AND job_key = ?")
+                .bind(JOB_KIND_MEMORY_DB_AUDIT_GLOBAL)
+                .bind(MEMORY_DB_AUDIT_JOB_KEY)
+                .fetch_one(runtime.pool.as_ref())
+                .await
+                .expect("audit job status");
+        assert_eq!(audit_job_status, "completed");
+
+        let _ = tokio::fs::remove_dir_all(codex_home).await;
+    }
 
     #[tokio::test]
     async fn stage1_claim_skips_when_up_to_date() {
@@ -1915,9 +2294,10 @@ mod tests {
         assert_eq!(stage1_outputs_count, 0);
 
         let memory_jobs_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM jobs WHERE kind = ? OR kind = ?")
+            sqlx::query_scalar("SELECT COUNT(*) FROM jobs WHERE kind = ? OR kind = ? OR kind = ?")
                 .bind(JOB_KIND_MEMORY_STAGE1)
                 .bind(JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL)
+                .bind(JOB_KIND_MEMORY_DB_AUDIT_GLOBAL)
                 .fetch_one(runtime.pool.as_ref())
                 .await
                 .expect("count memory jobs");
@@ -2024,9 +2404,10 @@ mod tests {
         assert_eq!(stage1_outputs_count, 0);
 
         let memory_jobs_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM jobs WHERE kind = ? OR kind = ?")
+            sqlx::query_scalar("SELECT COUNT(*) FROM jobs WHERE kind = ? OR kind = ? OR kind = ?")
                 .bind(JOB_KIND_MEMORY_STAGE1)
                 .bind(JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL)
+                .bind(JOB_KIND_MEMORY_DB_AUDIT_GLOBAL)
                 .fetch_one(runtime.pool.as_ref())
                 .await
                 .expect("count memory jobs");
