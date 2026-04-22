@@ -456,10 +456,20 @@ pub(crate) fn construct_model_info_from_candidates(
     let remote = find_model_by_longest_prefix(model, candidates)
         .or_else(|| find_model_by_namespaced_suffix(model, candidates));
     let model_info = if let Some(remote) = remote {
-        ModelInfo {
-            slug: model.to_string(),
-            used_fallback_model_metadata: false,
-            ..remote
+        if remote.used_fallback_model_metadata {
+            let mut fallback = model_info::model_info_from_slug(model);
+            fallback.display_name = remote.display_name;
+            fallback.description = remote.description;
+            fallback.visibility = remote.visibility;
+            fallback.supported_in_api = remote.supported_in_api;
+            fallback.priority = remote.priority;
+            fallback
+        } else {
+            ModelInfo {
+                slug: model.to_string(),
+                used_fallback_model_metadata: false,
+                ..remote
+            }
         }
     } else {
         model_info::model_info_from_slug(model)

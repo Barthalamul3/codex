@@ -243,6 +243,11 @@ Recent parity slices that were once custom but are already upstream on current
 - Guardian review "feature disable" follow-up:
   `overlay: 52c308fc61` -> upstream `58e7605efc` (`#18795`)
 
+Recent carried patches on `replatform/origin-main`:
+
+- Model provider compatibility for OpenAI-style `/models` payloads:
+  `overlay: b6e8394a79` -> replatform carried patch
+
 Implication:
 
 - The initial must-patch queue should restart from zero on top of current
@@ -315,12 +320,6 @@ time against current upstream `main`:
    Working assumption:
    - keep this separate from the helper-tool stack because it changes session
      and runtime behavior, not just tool exposure.
-3. Model provider compatibility:
-   - `b6e8394a79` `overlay: accept OpenAI-style model listings`
-   Working assumption:
-   - this is an isolated compatibility patch and can be replayed or dropped on
-     its own merits.
-
 ### Local environment / build-only patches
 
 These are useful for this machine or this workflow, but they should not be

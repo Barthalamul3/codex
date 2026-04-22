@@ -421,10 +421,79 @@ impl From<&ModelUpgrade> for ModelInfoUpgrade {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ModelsResponseWire {
+    Codex { models: Vec<ModelInfo> },
+    OpenAi(OpenAiModelsResponse),
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelsResponse {
+    data: Vec<OpenAiModelSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelSummary {
+    id: String,
+}
+
+impl From<OpenAiModelSummary> for ModelInfo {
+    fn from(value: OpenAiModelSummary) -> Self {
+        ModelInfo {
+            slug: value.id.clone(),
+            display_name: value.id,
+            description: None,
+            default_reasoning_level: None,
+            supported_reasoning_levels: Vec::new(),
+            shell_type: ConfigShellToolType::Default,
+            visibility: ModelVisibility::List,
+            supported_in_api: true,
+            priority: 99,
+            additional_speed_tiers: Vec::new(),
+            availability_nux: None,
+            upgrade: None,
+            base_instructions: String::new(),
+            model_messages: None,
+            supports_reasoning_summaries: false,
+            default_reasoning_summary: ReasoningSummary::Auto,
+            support_verbosity: false,
+            default_verbosity: None,
+            apply_patch_tool_type: None,
+            web_search_tool_type: WebSearchToolType::Text,
+            truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
+            supports_parallel_tool_calls: false,
+            supports_image_detail_original: false,
+            context_window: Some(272_000),
+            max_context_window: Some(272_000),
+            auto_compact_token_limit: None,
+            effective_context_window_percent: 95,
+            experimental_supported_tools: Vec::new(),
+            input_modalities: default_input_modalities(),
+            used_fallback_model_metadata: true,
+            supports_search_tool: false,
+        }
+    }
+}
+
 /// Response wrapper for `/models`.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema, Default)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, TS, JsonSchema, Default)]
 pub struct ModelsResponse {
     pub models: Vec<ModelInfo>,
+}
+
+impl<'de> Deserialize<'de> for ModelsResponse {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match ModelsResponseWire::deserialize(deserializer)? {
+            ModelsResponseWire::Codex { models } => Ok(Self { models }),
+            ModelsResponseWire::OpenAi(response) => Ok(Self {
+                models: response.data.into_iter().map(ModelInfo::from).collect(),
+            }),
+        }
+    }
 }
 
 // convert ModelInfo to ModelPreset
@@ -828,5 +897,27 @@ mod tests {
             })
         );
         assert!(preset.supports_fast_mode());
+    }
+
+    #[test]
+    fn models_response_deserializes_openai_style_model_list() {
+        let response: ModelsResponse = serde_json::from_value(serde_json::json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "gpt-5.4",
+                    "object": "model",
+                    "created": 1_706_745_600,
+                    "owned_by": "provider"
+                }
+            ]
+        }))
+        .expect("deserialize openai models response");
+
+        assert_eq!(response.models.len(), 1);
+        assert_eq!(response.models[0].slug, "gpt-5.4");
+        assert_eq!(response.models[0].display_name, "gpt-5.4");
+        assert_eq!(response.models[0].visibility, ModelVisibility::List);
+        assert!(response.models[0].used_fallback_model_metadata);
     }
 }
