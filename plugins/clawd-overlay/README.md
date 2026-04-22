@@ -31,7 +31,15 @@ absolute path.
    marketplace for the current working directory.
 3. Let install persist the plugin entry in user config.
    - Upstream install already writes `enabled = true` for the plugin key.
-4. Disable the legacy project skill files in user config:
+4. Disable the legacy project skill files:
+
+```bash
+codex skills disable --path /absolute/path/to/repo/.codex/skills/babysit-pr/SKILL.md
+codex skills disable --path /absolute/path/to/repo/.codex/skills/remote-tests/SKILL.md
+codex skills disable --path /absolute/path/to/repo/.codex/skills/test-tui/SKILL.md
+```
+
+Equivalent raw config:
 
 ```toml
 [[skills.config]]

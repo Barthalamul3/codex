@@ -102,7 +102,15 @@ There are repo-local custom skills that are good plugin candidates:
 These are now mirrored into the plugin package and should be treated as the
 first migration target out of the fork surface.
 
-Recommended cutover config:
+Recommended cutover command:
+
+```bash
+codex skills disable --path /absolute/path/to/repo/.codex/skills/babysit-pr/SKILL.md
+codex skills disable --path /absolute/path/to/repo/.codex/skills/remote-tests/SKILL.md
+codex skills disable --path /absolute/path/to/repo/.codex/skills/test-tui/SKILL.md
+```
+
+Equivalent raw config:
 
 ```toml
 [[skills.config]]

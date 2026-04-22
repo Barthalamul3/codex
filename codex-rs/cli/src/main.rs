@@ -56,6 +56,7 @@ use codex_core::build_models_manager;
 use codex_core::clear_memory_roots_contents;
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
+use codex_core::config::edit::ConfigEdit;
 use codex_core::config::edit::ConfigEditsBuilder;
 use codex_core::config::find_codex_home;
 use codex_features::FEATURES;
@@ -176,6 +177,9 @@ enum Subcommand {
 
     /// Inspect feature flags.
     Features(FeaturesCli),
+
+    /// Manage skill config overrides.
+    Skills(SkillsCli),
 }
 
 #[derive(Debug, Parser)]
@@ -696,6 +700,41 @@ enum FeaturesSubcommand {
 struct FeatureSetArgs {
     /// Feature key to update (for example: unified_exec).
     feature: String,
+}
+
+#[derive(Debug, Parser)]
+struct SkillsCli {
+    #[command(subcommand)]
+    sub: SkillsSubcommand,
+}
+
+#[derive(Debug, Parser)]
+enum SkillsSubcommand {
+    /// Enable a skill by removing an override entry from config.toml.
+    Enable(SkillSetArgs),
+    /// Disable a skill by writing an override entry to config.toml.
+    Disable(SkillSetArgs),
+}
+
+#[derive(Debug, Parser)]
+struct SkillSetArgs {
+    /// Absolute or relative path to a SKILL.md file.
+    #[arg(
+        long,
+        value_name = "PATH",
+        conflicts_with = "name",
+        required_unless_present = "name"
+    )]
+    path: Option<PathBuf>,
+
+    /// Skill name selector.
+    #[arg(
+        long,
+        value_name = "SKILL_NAME",
+        conflicts_with = "path",
+        required_unless_present = "path"
+    )]
+    name: Option<String>,
 }
 
 fn stage_str(stage: Stage) -> &'static str {
@@ -1220,6 +1259,24 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 disable_feature_in_config(&interactive, &feature).await?;
             }
         },
+        Some(Subcommand::Skills(SkillsCli { sub })) => match sub {
+            SkillsSubcommand::Enable(SkillSetArgs { path, name }) => {
+                reject_remote_mode_for_subcommand(
+                    root_remote.as_deref(),
+                    root_remote_auth_token_env.as_deref(),
+                    "skills enable",
+                )?;
+                set_skill_in_config(&interactive, path, name, /*enabled*/ true).await?;
+            }
+            SkillsSubcommand::Disable(SkillSetArgs { path, name }) => {
+                reject_remote_mode_for_subcommand(
+                    root_remote.as_deref(),
+                    root_remote_auth_token_env.as_deref(),
+                    "skills disable",
+                )?;
+                set_skill_in_config(&interactive, path, name, /*enabled*/ false).await?;
+            }
+        },
     }
 
     Ok(())
@@ -1264,6 +1321,42 @@ async fn disable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyho
         .apply()
         .await?;
     println!("Disabled feature `{feature}` in config.toml.");
+    Ok(())
+}
+
+async fn set_skill_in_config(
+    interactive: &TuiCli,
+    path: Option<PathBuf>,
+    name: Option<String>,
+    enabled: bool,
+) -> anyhow::Result<()> {
+    let edit = match (&path, &name) {
+        (Some(path), None) => ConfigEdit::SetSkillConfig {
+            path: path.clone(),
+            enabled,
+        },
+        (None, Some(name)) if !name.trim().is_empty() => ConfigEdit::SetSkillConfigByName {
+            name: name.clone(),
+            enabled,
+        },
+        _ => anyhow::bail!("provide exactly one of --path or --name"),
+    };
+
+    let selector_message = match (&path, &name) {
+        (Some(path), None) => format!("skill path `{}`", path.display()),
+        (None, Some(name)) => format!("skill `{name}`"),
+        _ => anyhow::bail!("provide exactly one of --path or --name"),
+    };
+
+    let codex_home = find_codex_home()?;
+    ConfigEditsBuilder::new(&codex_home)
+        .with_profile(interactive.config_profile.as_deref())
+        .with_edits([edit])
+        .apply()
+        .await?;
+
+    let action = if enabled { "Enabled" } else { "Disabled" };
+    println!("{action} {selector_message} in config.toml.");
     Ok(())
 }
 
@@ -2461,6 +2554,47 @@ mod tests {
             panic!("expected features disable");
         };
         assert_eq!(feature, "shell_tool");
+    }
+
+    #[test]
+    fn skills_disable_parses_path_selector() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "skills",
+            "disable",
+            "--path",
+            "/tmp/skills/demo/SKILL.md",
+        ])
+        .expect("parse should succeed");
+        let Some(Subcommand::Skills(SkillsCli { sub })) = cli.subcommand else {
+            panic!("expected skills subcommand");
+        };
+        let SkillsSubcommand::Disable(SkillSetArgs { path, name }) = sub else {
+            panic!("expected skills disable");
+        };
+        assert_eq!(path, Some(PathBuf::from("/tmp/skills/demo/SKILL.md")));
+        assert_eq!(name, None);
+    }
+
+    #[test]
+    fn skills_enable_parses_name_selector() {
+        let cli =
+            MultitoolCli::try_parse_from(["codex", "skills", "enable", "--name", "github:yeet"])
+                .expect("parse should succeed");
+        let Some(Subcommand::Skills(SkillsCli { sub })) = cli.subcommand else {
+            panic!("expected skills subcommand");
+        };
+        let SkillsSubcommand::Enable(SkillSetArgs { path, name }) = sub else {
+            panic!("expected skills enable");
+        };
+        assert_eq!(path, None);
+        assert_eq!(name.as_deref(), Some("github:yeet"));
+    }
+
+    #[test]
+    fn skills_disable_requires_selector() {
+        let parse_result = MultitoolCli::try_parse_from(["codex", "skills", "disable"]);
+        assert!(parse_result.is_err());
     }
 
     #[test]
