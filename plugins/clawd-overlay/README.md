@@ -11,7 +11,7 @@ workflow.
   `plugin/list`, so this plugin can be discovered without a custom runtime
   patch.
 - Plugin manifests already support plugin-owned `skills`, `mcpServers`, and
-  `apps`.
+  `apps`, but this plugin currently needs only `skills`.
 - The current upstream CLI exposes marketplace management, but plugin install is
   still driven through the TUI/app-server plugin flow.
 
@@ -23,6 +23,10 @@ skills, so they outrank the mirrored plugin copies by default.
 That does not require a new core patch. The clean cutover path is to keep the
 plugin enabled and disable the legacy project skill files from user config by
 absolute path.
+
+The plugin does not currently own any repo-scoped MCP or app integrations.
+Those remain in user/global config until there is a concrete integration set
+that should travel with this repo plugin.
 
 ## Recommended cutover
 

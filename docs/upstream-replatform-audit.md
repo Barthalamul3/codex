@@ -42,7 +42,7 @@ for a long-lived fork:
 This means the end state should be:
 
 1. A fresh branch rooted on `origin/main`
-2. A repo-local plugin for custom skills/MCP/apps/workflow packaging
+2. A repo-local plugin for custom skills and workflow packaging
 3. Minimal provider/config overlays for service routing and auth
 4. A short curated patch queue for the remaining core/TUI behavior deltas
 
@@ -86,12 +86,12 @@ repo-local skills have been mirrored into it, but it is not wired into the
 custom workflow yet.
 
 - Present: `plugins/clawd-overlay/.codex-plugin/plugin.json`
-- Present: `plugins/clawd-overlay/.mcp.json`
-- Present: `plugins/clawd-overlay/.app.json`
 - Present: mirrored skill copies under `plugins/clawd-overlay/skills/`
 - Present: repo-local marketplace registration in `.agents/plugins/marketplace.json`
 - Missing: final cutover of the old project `.codex/skills/` copies so the
   plugin-owned copies become the effective source of truth
+- Deferred: plugin-owned MCP/app manifests until a concrete repo-scoped
+  integration set is identified
 
 There are repo-local custom skills that are good plugin candidates:
 
@@ -145,8 +145,8 @@ Target shape:
 
 - `.codex-plugin/plugin.json`
 - `.codex-plugin/skills/`
-- `.codex-plugin/.mcp.json`
-- `.codex-plugin/.app.json`
+- optional `.codex-plugin/.mcp.json` when the plugin owns repo-scoped MCP integrations
+- optional `.codex-plugin/.app.json` when the plugin owns repo-scoped app integrations
 - optional repo-local `.agents/plugins/marketplace.json`
 
 ### Configurable
@@ -283,10 +283,10 @@ Completed on the upstream-rooted replatform branch:
 
 Remaining next tasks:
 
-1. Decide whether the plugin should also own repo-local MCP/app manifests or
-   continue using placeholders until the service audit is complete.
-2. Re-audit any remaining overlay-only behavior deltas against current upstream
+1. Re-audit any remaining overlay-only behavior deltas against current upstream
    `main` and only add still-missing behavior to the explicit patch queue.
+2. If a real repo-scoped MCP/app integration set emerges later, move it into
+   the plugin as explicit manifests instead of reviving empty placeholders.
 3. Keep replaying new custom deltas as small commits on top of `origin/main`
    rather than reusing `overlay/main` as the merge base.
 

@@ -11,12 +11,10 @@
     "codex"
   ],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
-  "apps": "./.app.json",
   "interface": {
     "displayName": "Clawd Overlay",
     "shortDescription": "Custom workflow overlay migration target.",
-    "longDescription": "Repo-local plugin that mirrors Clawd custom skills and will become the upstream-compatible home for custom MCP and app integrations.",
+    "longDescription": "Repo-local plugin that mirrors Clawd custom skills. MCP and app integrations stay in config until a concrete plugin-scoped set is identified.",
     "developerName": "Clawd",
     "category": "Developer Tools",
     "capabilities": [
