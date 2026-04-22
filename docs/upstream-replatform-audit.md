@@ -182,6 +182,11 @@ Current findings from the overlay worktree:
   - `forced_chatgpt_workspace_id`
 - Existing config tests already exercise a generic custom provider shape using
   `openai-custom`, which is the correct architectural direction.
+- The active local runtime config now proves the baseline `theclawbay` access
+  path is expressible through config alone:
+  - `model_provider = "theclawbay"`
+  - `chatgpt_base_url = ...`
+  - `[model_providers.theclawbay]`
 
 Implication:
 
@@ -222,17 +227,30 @@ upstream, at least for now.
 - App-server or protocol deltas that are custom and not upstream-compatible
 - Sandbox or execution behavior changes that cannot be expressed in config
 
-Recent examples already being carried as targeted patches:
+Recent parity slices that were once custom but are already upstream on current
+`main`:
 
-- TUI shell follow-up queue behavior
-- TUI tmux-aware notifications
-- TUI skill mention fallback labels
-- TUI VS Code WSL keyboard-enhancement fix
-- MCP tool metadata thread-id propagation
-- Guardian review flow adjustments
+- TUI shell follow-up queue behavior:
+  `overlay: 612ed80c9f` -> upstream `b7fec54354` (`#18820`)
+- TUI tmux-aware notifications:
+  `overlay: 4c3cbfb22f` -> upstream `41652665f5` (`#17836`)
+- TUI skill mention fallback labels:
+  `overlay: a235ec20c2` -> upstream `2cc146f5ea` (`#18786`)
+- TUI VS Code WSL keyboard-enhancement fix:
+  upstream `1101dec9ae` (`#18741`)
+- MCP tool metadata thread-id propagation:
+  `overlay: a4778ae39f` -> upstream `3a9df58d06` (`#18093`)
+- Guardian review "feature disable" follow-up:
+  `overlay: 52c308fc61` -> upstream `58e7605efc` (`#18795`)
 
-These should be kept as a small, explicit patch queue rather than mixed into a
-monolithic long-lived fork branch.
+Implication:
+
+- The initial must-patch queue should restart from zero on top of current
+  upstream `main`.
+- Only behavior that still fails re-validation against current upstream should
+  be reintroduced as a carried patch.
+- The patch queue should stay commit-sized and explicit rather than mixed into a
+  monolithic long-lived fork branch.
 
 ## Recommended branch model
 
@@ -250,20 +268,27 @@ Instead:
 4. Port patches one by one with tests instead of replaying the full historical
    overlay branch.
 
-## Immediate next tasks
+## Current status
 
-1. Validate the repo-local plugin install/enable flow from the upstream-rooted
-   branch using the existing marketplace discovery path.
-2. Apply user-layer `skills.config` path rules for the mirrored legacy skill
-   files during cutover instead of patching the runtime first.
-3. Decide whether the plugin should also own repo-local MCP/app manifests or
+Completed on the upstream-rooted replatform branch:
+
+1. Repo-local plugin install/enable flow was validated using existing
+   marketplace discovery.
+2. User-layer `skills.config` cutover can now be applied through
+   `codex skills disable ...` instead of adding another runtime patch.
+3. The current custom provider/auth path is confirmed to be config-migratable.
+4. A fresh worktree from `origin/main` is now the active landing branch.
+5. The old "low-risk parity" patch candidates were rechecked and are already
+   upstream, so they should not seed a new carried patch queue.
+
+Remaining next tasks:
+
+1. Decide whether the plugin should also own repo-local MCP/app manifests or
    continue using placeholders until the service audit is complete.
-4. Audit current custom auth/provider behavior and map it to config-based
-   provider definitions.
-5. Write down the initial must-patch queue as commit-sized items, starting with
-   the already-landed low-risk TUI parity slices.
-6. Start a fresh worktree from `origin/main` for the replatform effort rather
-   than continuing to accumulate migration logic only on `overlay/main`.
+2. Re-audit any remaining overlay-only behavior deltas against current upstream
+   `main` and only add still-missing behavior to the explicit patch queue.
+3. Keep replaying new custom deltas as small commits on top of `origin/main`
+   rather than reusing `overlay/main` as the merge base.
 
 ## Success criteria
 
