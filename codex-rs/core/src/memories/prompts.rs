@@ -12,6 +12,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::truncate_text;
 use codex_utils_template::Template;
+use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::LazyLock;
@@ -272,6 +273,7 @@ pub(crate) async fn build_memory_tool_developer_instructions(
         .ok()?
         .trim()
         .to_string();
+    let memory_summary = normalize_memory_summary_for_prompt(&memory_summary);
     let memory_summary = truncate_text(
         &memory_summary,
         TruncationPolicy::Tokens(phase_one::MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_SUMMARY_TOKEN_LIMIT),
@@ -286,6 +288,103 @@ pub(crate) async fn build_memory_tool_developer_instructions(
             ("memory_summary", memory_summary.as_str()),
         ])
         .ok()
+}
+
+pub(super) fn normalize_memory_summary_for_prompt(memory_summary: &str) -> String {
+    let lines = memory_summary
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>();
+    let mut normalized = Vec::with_capacity(lines.len());
+    let mut seen_topic_blocks = HashSet::new();
+    let mut in_whats_in_memory = false;
+    let mut index = 0;
+
+    while index < lines.len() {
+        let line = lines[index];
+        if line == "## What's in Memory" {
+            in_whats_in_memory = true;
+            normalized.push(line.to_string());
+            index += 1;
+            continue;
+        }
+        if in_whats_in_memory && line.starts_with("## ") && line != "## What's in Memory" {
+            in_whats_in_memory = false;
+        }
+        if in_whats_in_memory && is_memory_topic_line(line) {
+            let (block, next_index) = collect_memory_topic_block(&lines, index);
+            index = next_index;
+            let deduped_block = dedupe_topic_block_lines(block);
+            let key = deduped_block
+                .iter()
+                .filter(|line| !line.is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n");
+            if seen_topic_blocks.insert(key) {
+                normalized.extend(deduped_block);
+            }
+            continue;
+        }
+        normalized.push(line.to_string());
+        index += 1;
+    }
+
+    collapse_blank_lines(normalized).join("\n")
+}
+
+fn is_memory_topic_line(line: &str) -> bool {
+    line.starts_with("- ") && !line.starts_with("- desc:") && !line.starts_with("- learnings:")
+}
+
+fn collect_memory_topic_block(lines: &[&str], start: usize) -> (Vec<String>, usize) {
+    let mut block = vec![lines[start].to_string()];
+    let mut index = start + 1;
+    while index < lines.len() {
+        let line = lines[index];
+        if line.starts_with("## ") || line.starts_with("### ") || is_memory_topic_line(line) {
+            break;
+        }
+        if line.is_empty() || line.starts_with(' ') || line.starts_with('\t') {
+            block.push(line.to_string());
+            index += 1;
+            continue;
+        }
+        break;
+    }
+    (block, index)
+}
+
+fn dedupe_topic_block_lines(block: Vec<String>) -> Vec<String> {
+    let mut deduped = Vec::with_capacity(block.len());
+    let mut seen_lines = HashSet::new();
+    for line in block {
+        if line.is_empty() {
+            deduped.push(line);
+            continue;
+        }
+        if seen_lines.insert(line.clone()) {
+            deduped.push(line);
+        }
+    }
+    deduped
+}
+
+fn collapse_blank_lines(lines: Vec<String>) -> Vec<String> {
+    let mut collapsed = Vec::with_capacity(lines.len());
+    let mut previous_blank = false;
+    for line in lines {
+        let is_blank = line.is_empty();
+        if is_blank && previous_blank {
+            continue;
+        }
+        previous_blank = is_blank;
+        collapsed.push(line);
+    }
+    while collapsed.last().is_some_and(std::string::String::is_empty) {
+        collapsed.pop();
+    }
+    collapsed
 }
 
 #[cfg(test)]

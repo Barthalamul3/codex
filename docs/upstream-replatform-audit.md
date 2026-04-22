@@ -249,6 +249,8 @@ Recent carried patches on `replatform/origin-main`:
   `overlay: b6e8394a79` -> replatform carried patch
 - Memory fresh-start reset semantics for `debug clear-memories`:
   partial carry from `overlay: 843aa0645b`
+- Memory post-phase2 `memory_summary.md` normalization:
+  partial carry from `overlay: 843aa0645b`
 
 Implication:
 
@@ -320,8 +322,6 @@ time against current upstream `main`:
 2. Memory runtime behavior:
    - remaining carry from `843aa0645b`:
      startup DB audit before phase 1 / phase 2
-   - remaining carry from `843aa0645b`:
-     post-phase2 `memory_summary.md` normalization
    Working assumption:
    - keep these separate from the helper-tool stack because they change session
      and runtime behavior, not just tool exposure.

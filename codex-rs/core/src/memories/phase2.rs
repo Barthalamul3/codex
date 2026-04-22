@@ -8,6 +8,7 @@ use crate::memories::memory_root;
 use crate::memories::metrics;
 use crate::memories::phase_two;
 use crate::memories::prompts::build_consolidation_prompt;
+use crate::memories::prompts::normalize_memory_summary_for_prompt;
 use crate::memories::storage::rebuild_raw_memories_file_from_memories;
 use crate::memories::storage::rollout_summary_file_stem;
 use crate::memories::storage::sync_rollout_summaries_from_memories;
@@ -28,6 +29,7 @@ use codex_state::Stage1Output;
 use codex_state::StateRuntime;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -180,6 +182,7 @@ pub(super) async fn run(session: &Arc<Session>, config: Arc<Config>) {
         claim,
         new_watermark,
         raw_memories.clone(),
+        root.to_path_buf(),
         pending_extension_resource_removals,
         thread_id,
         agent_control,
@@ -375,6 +378,7 @@ mod agent {
         claim: Claim,
         new_watermark: i64,
         selected_outputs: Vec<codex_state::Stage1Output>,
+        root: std::path::PathBuf,
         pending_extension_resource_removals: Vec<PendingExtensionResourceRemoval>,
         thread_id: ThreadId,
         agent_control: crate::agent::AgentControl,
@@ -409,6 +413,11 @@ mod agent {
             .await;
 
             if matches!(final_status, AgentStatus::Completed(_)) {
+                if let Err(err) = normalize_memory_summary_file(&root).await {
+                    tracing::error!("failed normalizing memory summary after consolidation: {err}");
+                    job::failed(&session, &db, &claim, "failed_normalize_memory_summary").await;
+                    return;
+                }
                 if let Some(token_usage) = agent_control.get_total_token_usage(thread_id).await {
                     emit_token_usage_metrics(&session, &token_usage);
                 }
@@ -493,6 +502,18 @@ mod agent {
             }
         }
     }
+}
+
+pub(super) async fn normalize_memory_summary_file(root: &Path) -> std::io::Result<()> {
+    let path = root.join("memory_summary.md");
+    let Ok(contents) = tokio::fs::read_to_string(&path).await else {
+        return Ok(());
+    };
+    let normalized = normalize_memory_summary_for_prompt(contents.trim());
+    if normalized != contents {
+        tokio::fs::write(path, format!("{normalized}\n")).await?;
+    }
+    Ok(())
 }
 
 pub(super) fn get_watermark(

@@ -986,6 +986,43 @@ mod phase2 {
     }
 
     #[tokio::test]
+    async fn normalize_memory_summary_file_dedupes_repeated_topic_blocks() {
+        let harness = DispatchHarness::new().await;
+        let root = memory_root(&harness.config.codex_home);
+        tokio::fs::create_dir_all(&root)
+            .await
+            .expect("create memory root");
+        let memory_summary_path = root.join("memory_summary.md");
+        tokio::fs::write(
+            &memory_summary_path,
+            r#"## User Profile
+Profile line.
+
+## What's in Memory
+### 2026-03-09
+- Topic A: keyword
+  - desc: useful routing
+  - learnings: keep the first copy
+- Topic A: keyword
+  - desc: useful routing
+  - learnings: keep the first copy
+"#,
+        )
+        .await
+        .expect("write duplicated memory summary");
+
+        phase2::normalize_memory_summary_file(&root)
+            .await
+            .expect("normalize memory summary");
+
+        let normalized = tokio::fs::read_to_string(memory_summary_path)
+            .await
+            .expect("read normalized memory summary");
+        pretty_assertions::assert_eq!(normalized.matches("- Topic A: keyword").count(), 1);
+        pretty_assertions::assert_eq!(normalized.matches("keep the first copy").count(), 1);
+    }
+
+    #[tokio::test]
     async fn dispatch_marks_job_for_retry_when_spawn_agent_fails() {
         let codex_home = tempfile::tempdir().expect("create temp codex home");
         let mut config = test_config().await;
