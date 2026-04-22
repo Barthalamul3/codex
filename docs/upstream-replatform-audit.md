@@ -79,17 +79,23 @@ precisely.
   - Those rules apply from the user/session layers only, which fits the desired
     migration model.
 
-## Current cutover gap
+## Current cutover state
 
-A repo-local plugin scaffold now exists at `plugins/clawd-overlay/`, and the
-repo-local skills have been mirrored into it, but it is not wired into the
-custom workflow yet.
+A repo-local plugin scaffold exists at `plugins/clawd-overlay/`, and the live
+local cutover has already been applied for the active `replatform-main`
+worktree.
 
 - Present: `plugins/clawd-overlay/.codex-plugin/plugin.json`
 - Present: mirrored skill copies under `plugins/clawd-overlay/skills/`
 - Present: repo-local marketplace registration in `.agents/plugins/marketplace.json`
-- Missing: final cutover of the old project `.codex/skills/` copies so the
-  plugin-owned copies become the effective source of truth
+- Applied locally: `plugins."clawd-overlay@clawd-local".enabled = true` in the
+  user config
+- Applied locally: legacy project skill paths for `babysit-pr`,
+  `remote-tests`, and `test-tui` are disabled through `[[skills.config]]`
+  absolute-path rules for this worktree, so the plugin-owned copies are the
+  effective source of truth in the active runtime
+- Open cleanup only: duplicate project `.codex/skills/*` copies still exist on
+  disk and can be removed later with explicit approval after more soak time
 - Deferred: plugin-owned MCP/app manifests until a concrete repo-scoped
   integration set is identified
 
@@ -99,8 +105,12 @@ There are repo-local custom skills that are good plugin candidates:
 - `.codex/skills/remote-tests/`
 - `.codex/skills/test-tui/`
 
-These are now mirrored into the plugin package and should be treated as the
-first migration target out of the fork surface.
+These are now mirrored into the plugin package and were the first migration
+target out of the fork surface.
+
+The cutover command below remains the correct upstream-native path for any
+other environment, but it is already applied in the active local config for the
+`replatform-main` worktree.
 
 Recommended cutover command:
 
@@ -294,14 +304,22 @@ Completed on the upstream-rooted replatform branch:
 6. The memory-runtime queue has been fully replayed as small carried patches,
    and helper guidance has started moving into the repo-local plugin instead of
    reopening core patches.
+7. The plugin-backed skill cutover is already active in the local runtime for
+   this worktree; the legacy repo skill paths are disabled in user config
+   rather than requiring another runtime patch.
 
 Remaining next tasks:
 
 1. Keep the core patch queue at zero unless a concrete missing behavior is
    proven on current upstream `main`.
-2. If a real repo-scoped MCP/app integration set emerges later, move it into
+2. Treat removal of the duplicate project `.codex/skills/*` copies as optional
+   cleanup only, not as a prerequisite for upstream replatform success.
+3. If a real repo-scoped MCP/app integration set emerges later, move it into
    the plugin as explicit manifests instead of reviving empty placeholders.
-3. Keep replaying new custom deltas as small commits on top of `origin/main`
+4. Re-check the reserve helper-tool candidates only if a concrete runtime gap
+   appears, with `experimental_supported_tools` plus native `read_file` /
+   `grep_files` as the first pair to validate together.
+5. Keep replaying new custom deltas as small commits on top of `origin/main`
    rather than reusing `overlay/main` as the merge base.
 
 ## Current overlay-only candidate queue
@@ -336,6 +354,10 @@ items are plugin landings or reserve-only candidates.
    - do not port either commit until a concrete missing behavior is observed on
      current upstream that cannot be handled by the plugin layer plus existing
      indexed repo helpers.
+   - the active operator config on this machine already requests
+     `experimental_supported_tools = ["read_file", "grep_files"]`, so this
+     reserve pair becomes the first re-check if a rebuilt upstream-rooted
+     runtime does not expose those helper tools in practice.
 ### Local environment / build-only patches
 
 These are useful for this machine or this workflow, but they should not be
