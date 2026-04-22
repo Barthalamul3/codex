@@ -291,11 +291,14 @@ Completed on the upstream-rooted replatform branch:
 4. A fresh worktree from `origin/main` is now the active landing branch.
 5. The old "low-risk parity" patch candidates were rechecked and are already
    upstream, so they should not seed a new carried patch queue.
+6. The memory-runtime queue has been fully replayed as small carried patches,
+   and helper guidance has started moving into the repo-local plugin instead of
+   reopening core patches.
 
 Remaining next tasks:
 
-1. Re-audit any remaining overlay-only behavior deltas against current upstream
-   `main` and only add still-missing behavior to the explicit patch queue.
+1. Keep the core patch queue at zero unless a concrete missing behavior is
+   proven on current upstream `main`.
 2. If a real repo-scoped MCP/app integration set emerges later, move it into
    the plugin as explicit manifests instead of reviving empty placeholders.
 3. Keep replaying new custom deltas as small commits on top of `origin/main`
@@ -309,6 +312,9 @@ overlay-only commits currently cluster into a much smaller set of candidates.
 ### Candidate behavior stack
 
 The helper stack has now been re-audited again against current upstream.
+
+There is no active must-patch Rust helper carry at the moment. The remaining
+items are plugin landings or reserve-only candidates.
 
 1. Plugin-first repo guidance:
    - `f3bfa4c396` `overlay: gate repo-aware prompt guidance by tool availability`
