@@ -316,9 +316,12 @@ Remaining next tasks:
    cleanup only, not as a prerequisite for upstream replatform success.
 3. If a real repo-scoped MCP/app integration set emerges later, move it into
    the plugin as explicit manifests instead of reviving empty placeholders.
-4. Re-check the reserve helper-tool candidates only if a concrete runtime gap
-   appears, with `experimental_supported_tools` plus native `read_file` /
-   `grep_files` as the first pair to validate together.
+4. Leave the reserve helper-tool candidates unported for now.
+   - Recent operator/runtime usage is already covered by `jcodemunch`,
+     `serena`, and `tool_search`, so the native `read_file` / `grep_files`
+     pair is not required for the current upstream-compatible workflow.
+   - Re-open that pair only if a future stripped-down runtime without those
+     repo-indexed helpers exposes a concrete missing capability.
 5. Keep replaying new custom deltas as small commits on top of `origin/main`
    rather than reusing `overlay/main` as the merge base.
 
@@ -354,10 +357,14 @@ items are plugin landings or reserve-only candidates.
    - do not port either commit until a concrete missing behavior is observed on
      current upstream that cannot be handled by the plugin layer plus existing
      indexed repo helpers.
-   - the active operator config on this machine already requests
-     `experimental_supported_tools = ["read_file", "grep_files"]`, so this
-     reserve pair becomes the first re-check if a rebuilt upstream-rooted
-     runtime does not expose those helper tools in practice.
+   - the active operator config on this machine still requests
+     `experimental_supported_tools = ["read_file", "grep_files"]`, but recent
+     replatform work on April 22, 2026 was served by `mcp__serena__read_file`
+     plus `jcodemunch` repo queries rather than the native helper pair.
+   - conclusion for this branch:
+     the reserve pair is not part of the required upstream replay stack for the
+     current custom workflow and should stay out unless a new concrete gap is
+     observed.
 ### Local environment / build-only patches
 
 These are useful for this machine or this workflow, but they should not be
