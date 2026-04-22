@@ -247,6 +247,8 @@ Recent carried patches on `replatform/origin-main`:
 
 - Model provider compatibility for OpenAI-style `/models` payloads:
   `overlay: b6e8394a79` -> replatform carried patch
+- Memory fresh-start reset semantics for `debug clear-memories`:
+  partial carry from `overlay: 843aa0645b`
 
 Implication:
 
@@ -316,9 +318,12 @@ time against current upstream `main`:
      patches, because prompt guidance, config, and helper-tool exposure depend
      on each other.
 2. Memory runtime behavior:
-   - `843aa0645b` `overlay: port memory runtime semantics`
+   - remaining carry from `843aa0645b`:
+     startup DB audit before phase 1 / phase 2
+   - remaining carry from `843aa0645b`:
+     post-phase2 `memory_summary.md` normalization
    Working assumption:
-   - keep this separate from the helper-tool stack because it changes session
+   - keep these separate from the helper-tool stack because they change session
      and runtime behavior, not just tool exposure.
 ### Local environment / build-only patches
 
