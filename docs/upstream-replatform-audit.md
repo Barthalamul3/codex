@@ -308,19 +308,28 @@ overlay-only commits currently cluster into a much smaller set of candidates.
 
 ### Candidate behavior stack
 
-These still appear to be local-only and should be revalidated one stack at a
-time against current upstream `main`:
+The helper stack has now been re-audited again against current upstream.
 
-1. Repo-aware helper tools and prompt guidance:
+1. Plugin-first repo guidance:
    - `f3bfa4c396` `overlay: gate repo-aware prompt guidance by tool availability`
-   - `ba7305dfab` `overlay: wire experimental supported tools config`
+   - landing zone:
+     `plugins/clawd-overlay/skills/replatform-helper-stack/SKILL.md`
+   Working assumption:
+   - keep repo-aware guidance in the plugin layer rather than reopening a core
+     prompt-guidance patch.
+2. Revalidated as already covered or likely obsolete on current upstream:
    - `965e34389f` `overlay: port MCP discovery tool selection`
    - `f7a55a7f36` `overlay: port apps BM25 tool discovery`
+   - rationale:
+     upstream now ships `tool_search` and deferred tool loading, which cover
+     the discovery path these commits previously supplied.
+3. Keep in reserve and only patch on proven need:
+   - `ba7305dfab` `overlay: wire experimental supported tools config`
    - `26d2591dbb` `overlay: port native file helper tools`
    Working assumption:
-   - treat these as one connected patch train rather than five independent
-     patches, because prompt guidance, config, and helper-tool exposure depend
-     on each other.
+   - do not port either commit until a concrete missing behavior is observed on
+     current upstream that cannot be handled by the plugin layer plus existing
+     indexed repo helpers.
 ### Local environment / build-only patches
 
 These are useful for this machine or this workflow, but they should not be
