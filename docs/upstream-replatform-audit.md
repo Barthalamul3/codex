@@ -290,6 +290,54 @@ Remaining next tasks:
 3. Keep replaying new custom deltas as small commits on top of `origin/main`
    rather than reusing `overlay/main` as the merge base.
 
+## Current overlay-only candidate queue
+
+After filtering out the parity slices that are already upstream, the remaining
+overlay-only commits currently cluster into a much smaller set of candidates.
+
+### Candidate behavior stack
+
+These still appear to be local-only and should be revalidated one stack at a
+time against current upstream `main`:
+
+1. Repo-aware helper tools and prompt guidance:
+   - `f3bfa4c396` `overlay: gate repo-aware prompt guidance by tool availability`
+   - `ba7305dfab` `overlay: wire experimental supported tools config`
+   - `965e34389f` `overlay: port MCP discovery tool selection`
+   - `f7a55a7f36` `overlay: port apps BM25 tool discovery`
+   - `26d2591dbb` `overlay: port native file helper tools`
+   Working assumption:
+   - treat these as one connected patch train rather than five independent
+     patches, because prompt guidance, config, and helper-tool exposure depend
+     on each other.
+2. Memory runtime behavior:
+   - `843aa0645b` `overlay: port memory runtime semantics`
+   Working assumption:
+   - keep this separate from the helper-tool stack because it changes session
+     and runtime behavior, not just tool exposure.
+3. Model provider compatibility:
+   - `b6e8394a79` `overlay: accept OpenAI-style model listings`
+   Working assumption:
+   - this is an isolated compatibility patch and can be replayed or dropped on
+     its own merits.
+
+### Local environment / build-only patches
+
+These are useful for this machine or this workflow, but they should not be
+confused with product-behavior parity patches:
+
+- `a2b2097ed4` `overlay: stabilize debug clear memories test`
+- `7a02d4ff3d` `overlay: add explicit CI Rust debuginfo flags`
+- `77ccd93917` `overlay: move test-log to core dev-dependencies`
+- `b4cee2788e` `overlay: reduce Rust dev profile debuginfo`
+- `7d211a8ed3` `overlay: reduce Rust test profile debuginfo`
+
+Working rule:
+
+- Keep build/resource-safety patches separate from the upstream replay queue.
+- Only promote one of these into the carried stack if it is required for a
+  reproducible environment problem rather than just local convenience.
+
 ## Success criteria
 
 We should consider the migration strategy to be working when all of the
