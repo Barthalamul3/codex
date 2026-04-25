@@ -299,25 +299,18 @@ async fn get_model_info_uses_custom_catalog() {
 
 #[tokio::test]
 async fn get_model_info_uses_slug_fallback_for_openai_style_catalog() {
-    let codex_home = tempdir().expect("temp dir");
     let config = ModelsManagerConfig::default();
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-    let manager = ModelsManager::new(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        Some(
-            serde_json::from_value(json!({
-                "object": "list",
-                "data": [
-                    {
-                        "id": "gpt-5.4",
-                        "object": "model",
-                    }
-                ]
-            }))
-            .expect("valid openai-style model list"),
-        ),
-        CollaborationModesConfig::default(),
+    let manager = static_manager_for_tests(
+        serde_json::from_value(json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "gpt-5.4",
+                    "object": "model",
+                }
+            ]
+        }))
+        .expect("valid openai-style model list"),
     );
 
     let model_info = manager.get_model_info("gpt-5.4", &config).await;
